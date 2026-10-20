@@ -1,6 +1,6 @@
 # RocketMQ Dashboard 桌面版 - 开发进度
 
-> **最新进展（2026-10-20）**：阶段 0 基线修复已完成 —— 修复 Consumer 连接状态 bug、统一前端类型与 API 层、清理死代码、版本号对齐 0.3.0-alpha、建立 git 仓库。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询（按 Message ID / Key / 时间范围）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ## 项目概述
 基于 Tauri 2 + React 18 + TypeScript 的 RocketMQ 管理控制台桌面应用
