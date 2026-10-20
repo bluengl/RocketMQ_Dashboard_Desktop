@@ -20,3 +20,20 @@ export interface ClusterInfo {
   total_topics: number
   total_groups: number
 }
+
+export interface MessageInfo {
+  topic?: string
+  flag?: number
+  properties?: Record<string, string>
+  body?: string
+  queueId?: number
+  queueOffset?: number
+  commitLogOffset?: number
+  sysFlag?: number
+  bornTimestamp?: number
+  bornHost?: string
+  storeTimestamp?: number
+  storeHost?: string
+  msgId?: string
+  reconsumeTimes?: number
+}

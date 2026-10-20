@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use super::protocol::{
-    RemotingCommand, ClusterInfoResponse, TopicListResponse,
-    GET_BROKER_CLUSTER_INFO, GET_ALL_TOPIC_LIST_FROM_NAMESERVER, SUCCESS,
+    RemotingCommand, ClusterInfoResponse, TopicListResponse, TopicRouteData, MessageExt,
+    GET_BROKER_CLUSTER_INFO, GET_ALL_TOPIC_LIST_FROM_NAMESERVER, GET_ROUTEINFO_BY_TOPIC,
+    QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SUCCESS,
 };
 
 static OPAQUE_COUNTER: AtomicI32 = AtomicI32::new(1);
@@ -60,17 +62,12 @@ impl RocketMQClient {
         &self.name_server_addrs[self.current_addr_index]
     }
 
-    fn connect_with_timeout(&self) -> Result<TcpStream, String> {
-        let addr = self.get_current_addr();
-        TcpStream::connect_timeout(
+    fn send_command_to(&self, addr: &str, command: &RemotingCommand) -> Result<(RemotingCommand, Vec<u8>), String> {
+        let mut stream = TcpStream::connect_timeout(
             &addr.parse().map_err(|e| format!("Parse address failed: {}", e))?,
             Duration::from_secs(5),
         )
-        .map_err(|e| format!("Connect to {} failed: {}", addr, e))
-    }
-
-    fn send_command(&self, command: &RemotingCommand) -> Result<(RemotingCommand, Vec<u8>), String> {
-        let mut stream = self.connect_with_timeout()?;
+        .map_err(|e| format!("Connect to {} failed: {}", addr, e))?;
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
             .map_err(|e| format!("Set read timeout failed: {}", e))?;
@@ -78,7 +75,6 @@ impl RocketMQClient {
             .set_write_timeout(Some(Duration::from_secs(5)))
             .map_err(|e| format!("Set write timeout failed: {}", e))?;
 
-        // Send request
         let request_data = command.encode()?;
         stream
             .write_all(&request_data)
@@ -87,7 +83,6 @@ impl RocketMQClient {
             .flush()
             .map_err(|e| format!("Flush stream failed: {}", e))?;
 
-        // Read response total length
         let mut len_buf = [0u8; 4];
         stream
             .read_exact(&mut len_buf)
@@ -98,20 +93,22 @@ impl RocketMQClient {
             return Err("Response too large".to_string());
         }
 
-        // Read response data
         let mut response_data = vec![0u8; total_len];
         stream
             .read_exact(&mut response_data)
             .map_err(|e| format!("Read response data failed: {}", e))?;
 
-        // Decode response
         RemotingCommand::decode(&response_data)
+    }
+
+    fn send_command(&self, command: &RemotingCommand) -> Result<(RemotingCommand, Vec<u8>), String> {
+        self.send_command_to(self.get_current_addr(), command)
     }
 
     pub fn test_connection(&self) -> Result<(), String> {
         let command = RemotingCommand::new_request(GET_BROKER_CLUSTER_INFO, next_opaque());
         let (response, _) = self.send_command(&command)?;
-        
+
         if response.code == SUCCESS {
             Ok(())
         } else {
@@ -134,14 +131,11 @@ impl RocketMQClient {
             return Err("Empty response body".to_string());
         }
 
-        // Parse response body
         let cluster_response: ClusterInfoResponse = serde_json::from_slice(&body)
             .map_err(|e| format!("Parse cluster info failed: {}", e))?;
 
-        // Get topic count
         let topic_count = self.get_topic_list().map(|topics| topics.len() as u32).unwrap_or(0);
 
-        // Convert to BrokerInfo list
         let mut brokers = Vec::new();
         for (_, broker_data) in cluster_response.broker_addr_table.iter() {
             let addrs: Vec<String> = broker_data
@@ -166,8 +160,7 @@ impl RocketMQClient {
         })
     }
 
-
-    pub fn send_generic_request(&self, request_code: i32, ext_fields: std::collections::HashMap<String, String>) -> Result<(RemotingCommand, Vec<u8>), String> {
+    pub fn send_generic_request(&self, request_code: i32, ext_fields: HashMap<String, String>) -> Result<(RemotingCommand, Vec<u8>), String> {
         let command = RemotingCommand::new_request(request_code, next_opaque())
             .with_ext_fields(ext_fields);
         self.send_command(&command)
@@ -188,12 +181,114 @@ impl RocketMQClient {
             return Ok(Vec::new());
         }
 
-        // Parse response body
         let topic_response: TopicListResponse = serde_json::from_slice(&body)
             .map_err(|e| format!("Parse topic list failed: {}", e))?;
 
         Ok(topic_response.topic_list)
     }
+
+    pub fn get_route_info_by_topic(&self, topic: &str) -> Result<TopicRouteData, String> {
+        let mut ext = HashMap::new();
+        ext.insert("topic".to_string(), topic.to_string());
+        let command = RemotingCommand::new_request(GET_ROUTEINFO_BY_TOPIC, next_opaque())
+            .with_ext_fields(ext);
+        let (response, body) = self.send_command(&command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Get route info failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        if body.is_empty() {
+            return Err("Empty route info response".to_string());
+        }
+
+        let route: TopicRouteData = serde_json::from_slice(&body)
+            .map_err(|e| format!("Parse route info failed: {}", e))?;
+
+        Ok(route)
+    }
+
+    fn broker_addr_for_topic(&self, topic: &str) -> Result<String, String> {
+        let route = self.get_route_info_by_topic(topic)?;
+        route
+            .broker_datas
+            .first()
+            .and_then(|b| b.broker_addrs.get("0"))
+            .cloned()
+            .ok_or_else(|| format!("No broker found for topic: {}", topic))
+    }
+
+    pub fn query_message_by_key(&self, topic: &str, key: &str) -> Result<Vec<MessageExt>, String> {
+        let broker_addr = self.broker_addr_for_topic(topic)?;
+        let mut ext = HashMap::new();
+        ext.insert("topic".to_string(), topic.to_string());
+        ext.insert("key".to_string(), key.to_string());
+        ext.insert("maxNum".to_string(), "32".to_string());
+        ext.insert("beginTimestamp".to_string(), "0".to_string());
+        ext.insert("endTimestamp".to_string(), "9999999999999".to_string());
+        let command = RemotingCommand::new_request(QUERY_MESSAGE, next_opaque()).with_ext_fields(ext);
+        let (response, body) = self.send_command_to(&broker_addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Query message by key failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        parse_messages(&body)
+    }
+
+    pub fn query_message_by_id(&self, msg_id: &str) -> Result<Vec<MessageExt>, String> {
+        let broker_addr = parse_msg_id_addr(msg_id)?;
+        let mut ext = HashMap::new();
+        ext.insert("msgId".to_string(), msg_id.to_string());
+        let command = RemotingCommand::new_request(VIEW_MESSAGE_BY_ID, next_opaque()).with_ext_fields(ext);
+        let (response, body) = self.send_command_to(&broker_addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Query message by id failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        parse_messages(&body)
+    }
 }
 
+fn parse_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {
+    if body.is_empty() {
+        return Ok(Vec::new());
+    }
 
+    if let Ok(messages) = serde_json::from_slice::<Vec<MessageExt>>(body) {
+        return Ok(messages);
+    }
+
+    if let Ok(message) = serde_json::from_slice::<MessageExt>(body) {
+        return Ok(vec![message]);
+    }
+
+    Err("Failed to parse message response".to_string())
+}
+
+fn parse_msg_id_addr(msg_id: &str) -> Result<String, String> {
+    if msg_id.len() != 32 {
+        return Err("Invalid message ID: expected 32 hex characters".to_string());
+    }
+
+    let bytes: Vec<u8> = (0..16)
+        .map(|i| {
+            u8::from_str_radix(&msg_id[i * 2..i * 2 + 2], 16)
+                .map_err(|_| "Invalid message ID hex".to_string())
+        })
+        .collect::<Result<_, _>>()?;
+
+    let ip = format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3]);
+    let port = i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    Ok(format!("{}:{}", ip, port))
+}

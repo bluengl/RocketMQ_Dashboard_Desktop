@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { Activity, Database, List, MessageSquare, Users, Shield, GitBranch, Settings } from 'lucide-react'
 import TopicsPage from './TopicsPage'
 import ConsumersPage from './ConsumersPage'
+import MessagePage from './MessagePage'
 import type { ClusterInfo } from './types'
 import './App.css'
 
@@ -276,7 +277,9 @@ function App() {
 
           {currentPage === 'consumers' && <ConsumersPage connected={connected} />}
 
-          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && (
+          {currentPage === 'messages' && <MessagePage connected={connected} />}
+
+          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'messages' && (
             <div className="text-center py-20 text-slate-400">
               <p className="text-lg">{currentPage.toUpperCase()} page - Coming soon</p>
             </div>
