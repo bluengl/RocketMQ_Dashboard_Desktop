@@ -37,3 +37,22 @@ export interface MessageInfo {
   msgId?: string
   reconsumeTimes?: number
 }
+
+export interface QueueData {
+  brokerName: string
+  readQueueNums: number
+  writeQueueNums: number
+  perm: number
+  topicSynFlag: number
+}
+
+export interface TopicBrokerData {
+  cluster: string
+  brokerName: string
+  brokerAddrs: Record<string, string>
+}
+
+export interface TopicRouteData {
+  queueDatas: QueueData[]
+  brokerDatas: TopicBrokerData[]
+}

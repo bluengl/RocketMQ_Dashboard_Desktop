@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use super::protocol::{
     RemotingCommand, ClusterInfoResponse, TopicListResponse, TopicRouteData, MessageExt,
     GET_BROKER_CLUSTER_INFO, GET_ALL_TOPIC_LIST_FROM_NAMESERVER, GET_ROUTEINFO_BY_TOPIC,
-    QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SEARCH_OFFSET_BY_TIMESTAMP, SUCCESS,
+    QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SEARCH_OFFSET_BY_TIMESTAMP, UPDATE_AND_CREATE_TOPIC,
+    DELETE_TOPIC_IN_NAMESRV, DELETE_TOPIC_IN_BROKER, SUCCESS,
 };
 
 static OPAQUE_COUNTER: AtomicI32 = AtomicI32::new(1);
@@ -326,6 +327,67 @@ impl RocketMQClient {
         }
 
         Ok(all)
+    }
+
+    pub fn create_topic(
+        &self,
+        topic: &str,
+        broker_addr: &str,
+        read_queue_nums: i32,
+        write_queue_nums: i32,
+        perm: i32,
+    ) -> Result<(), String> {
+        let mut ext = HashMap::new();
+        ext.insert("topic".to_string(), topic.to_string());
+        ext.insert("defaultTopic".to_string(), "TBW102".to_string());
+        ext.insert("readQueueNums".to_string(), read_queue_nums.to_string());
+        ext.insert("writeQueueNums".to_string(), write_queue_nums.to_string());
+        ext.insert("perm".to_string(), perm.to_string());
+        ext.insert("topicFilterType".to_string(), "SINGLE_TAG".to_string());
+        ext.insert("order".to_string(), "false".to_string());
+        let command = RemotingCommand::new_request(UPDATE_AND_CREATE_TOPIC, next_opaque()).with_ext_fields(ext);
+        let (response, _) = self.send_command_to(broker_addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Create topic failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn delete_topic(&self, topic: &str) -> Result<(), String> {
+        let mut ext = HashMap::new();
+        ext.insert("topic".to_string(), topic.to_string());
+
+        let brokers: Vec<String> = self
+            .get_route_info_by_topic(topic)
+            .map(|route| {
+                route
+                    .broker_datas
+                    .iter()
+                    .filter_map(|b| b.broker_addrs.get("0").cloned())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for addr in &brokers {
+            let cmd = RemotingCommand::new_request(DELETE_TOPIC_IN_BROKER, next_opaque()).with_ext_fields(ext.clone());
+            let _ = self.send_command_to(addr, &cmd);
+        }
+
+        let namesrv_cmd = RemotingCommand::new_request(DELETE_TOPIC_IN_NAMESRV, next_opaque()).with_ext_fields(ext);
+        let (response, _) = self.send_command(&namesrv_cmd)?;
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Delete topic from nameserver failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        Ok(())
     }
 }
 

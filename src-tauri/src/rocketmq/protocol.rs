@@ -8,6 +8,9 @@ pub const GET_ROUTEINFO_BY_TOPIC: i32 = 105;
 pub const QUERY_MESSAGE: i32 = 12;
 pub const VIEW_MESSAGE_BY_ID: i32 = 33;
 pub const SEARCH_OFFSET_BY_TIMESTAMP: i32 = 29;
+pub const UPDATE_AND_CREATE_TOPIC: i32 = 17;
+pub const DELETE_TOPIC_IN_NAMESRV: i32 = 216;
+pub const DELETE_TOPIC_IN_BROKER: i32 = 215;
 
 // Response Codes
 pub const SUCCESS: i32 = 0;
