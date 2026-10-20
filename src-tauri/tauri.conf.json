@@ -1,0 +1,33 @@
+{
+    "$schema":  "https://schema.tauri.app/config/2",
+    "productName":  "RocketMQ Dashboard",
+    "version":  "0.3.0-alpha",
+    "identifier":  "com.rocketmq.dashboard",
+    "build":  {
+                  "beforeDevCommand":  "npm run dev:frontend",
+                  "devUrl":  "http://localhost:1420",
+                  "beforeBuildCommand":  "npm run build",
+                  "frontendDist":  "../dist"
+              },
+    "bundle":  {
+                   "active":  true,
+                   "targets":  "all",
+                   "icon":  [
+
+                            ]
+               },
+    "app":  {
+                "windows":  [
+                                {
+                                    "title":  "RocketMQ Dashboard",
+                                    "width":  1200,
+                                    "height":  800,
+                                    "resizable":  true,
+                                    "fullscreen":  false
+                                }
+                            ],
+                "security":  {
+                                 "csp":  null
+                             }
+            }
+}

@@ -1,0 +1,28 @@
+[package]
+name = "rocketmq-dashboard"
+version = "0.3.0-alpha"
+description = "RocketMQ Dashboard Desktop Application"
+authors = ["you"]
+license = ""
+repository = ""
+default-run = "rocketmq-dashboard"
+edition = "2021"
+rust-version = "1.70"
+
+[lib]
+name = "rocketmq_dashboard_lib"
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[[bin]]
+name = "rocketmq-dashboard"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tokio = { version = "1", features = ["full"] }
