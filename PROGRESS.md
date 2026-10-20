@@ -1,6 +1,6 @@
 # RocketMQ Dashboard 桌面版 - 开发进度
 
-> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 6 Message Trace 已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 4 Cluster + Dashboard（运行时信息/拓扑/TPS 趋势）、阶段 6 Message Trace、阶段 7 ACL（用户/规则 CRUD + 请求签名）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ## 项目概述
 基于 Tauri 2 + React 18 + TypeScript 的 RocketMQ 管理控制台桌面应用
@@ -101,11 +101,18 @@
 - [ ] 消息详情展示
 - [ ] 消息体查看
 
-### 📋 8. Dashboard 概览（0%）
-- [ ] 集群总览指标
-- [ ] TPS 实时统计
-- [ ] 消息堆积监控
-- [ ] 实时图表
+### ✅ 8. Cluster + Dashboard（100%）
+- [x] 集群总览指标（Broker / Topic / 消费组 / 生产 TPS / 消费 TPS）
+- [x] Broker 运行时信息（版本、运行时长、今日消息量、TPS、磁盘容量等全量字段）
+- [x] TPS 实时趋势图（每 5 秒采样，保留 60 个点，支持图表/表格切换）
+- [x] 集群拓扑可视化（集群 → Broker → master/slave 地址）
+- [x] Broker 运行时详情弹窗（关键指标 + 全量 key/value 搜索）
+
+**实现要点**:
+- `GET_BROKER_RUNTIME_INFO`（28，发送到 Broker）返回 `{"table": {...}}`，一次请求即可覆盖 Dashboard 所需指标
+- `get_dashboard_metrics` 聚合全部 master broker 的指标并汇总 topic / 消费组数量
+- 前端使用 `recharts`，图表配色经 dataviz 校验器在深色卡片背景上验证
+- `VIEW_BROKER_STATS_DATA`（107）与 `GET_BROKER_CONSUME_STATS`（109）命令已实现，但 5.3.2 Broker 返回 "request type not supported"，需在支持该请求码的版本上使用
 
 ### 📋 9. 运维工具（0%）
 - [ ] 重置消费位点
@@ -113,10 +120,20 @@
 - [ ] 清理过期消息
 - [ ] 配置管理
 
-### 📋 10. ACL 权限管理（0%）
-- [ ] 用户列表
-- [ ] 权限配置
-- [ ] 白名单管理
+### ✅ 10. ACL 权限管理（100%）
+- [x] 用户列表（用户名 / 密码 / 类型 / 状态，按 broker 聚合去重）
+- [x] 用户创建、更新、删除（广播到所有 master broker）
+- [x] ACL 规则列表（按 subject + resource 聚合）
+- [x] 规则创建、更新、删除（动作、来源 IP、Allow/Deny）
+- [x] 连接时可选 ACL 凭据，所有请求按 RocketMQ ACL 算法签名（HMAC-SHA1）
+
+**实现要点**:
+- 使用 ACL 2.0 请求码：`AUTH_CREATE_USER`(3001)、`AUTH_UPDATE_USER`(3002)、`AUTH_DELETE_USER`(3003)、`AUTH_LIST_USER`(3005)、`AUTH_CREATE_ACL`(3006)、`AUTH_UPDATE_ACL`(3007)、`AUTH_DELETE_ACL`(3008)、`AUTH_LIST_ACL`(3010)
+- 4.x 旧协议码 50–54 在 5.3.2 Broker 上不完整（54 返回 not supported），因此不采用
+- 用户/规则变更广播到所有 master broker；各 broker 的结果与错误分别返回并在页面提示
+- 规则资源格式：`topic:xxx`、`group:xxx`、`*`；动作：`Pub`/`Sub`/`Any`/`Create`/`Update`/`Delete`/`Get`/`List`/`All`；决策：`Allow`/`Deny`
+- 当前测试集群（5.3.2）未启用认证/授权元数据存储，列表返回
+  `The authenticationMetadataProvider is not configured`，需在 Broker 开启 `authenticationEnabled` / `authorizationEnabled` 后才能读写 ACL
 
 ### ✅ 11. 消息轨迹（100%）
 - [x] 按 Message ID 查询轨迹
@@ -195,17 +212,13 @@ rocketmqMg/
 
 ## 下一步计划
 
-1. **Cluster + Dashboard 完善** (阶段 4，优先级：高)
-   - Broker 运行时信息与统计数据
-   - Dashboard TPS / 消息量趋势图
-
-2. **Producer 查询** (阶段 5)
+1. **Producer 查询** (阶段 5)
    - 需先核实 RocketMQ 5.x Producer 查询请求码
 
-3. **ACL 权限管理** (阶段 7)
+2. **ACL 权限管理** (阶段 7)
    - 需先核实 ACL 相关请求码
 
-4. **OPS + 多集群 + 打包** (阶段 8)
+3. **OPS + 多集群 + 打包** (阶段 8)
    - 多集群切换、大数据量分页、错误分类、打包发布
 
 ## 已知问题

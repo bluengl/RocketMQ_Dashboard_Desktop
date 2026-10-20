@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ACL management (phase 7)**
+  - ACL 2.0 users: list, create, update and delete via `AUTH_CREATE_USER` (3001), `AUTH_UPDATE_USER` (3002), `AUTH_DELETE_USER` (3003) and `AUTH_LIST_USER` (3005)
+  - ACL 2.0 rules: list, create, update and delete via `AUTH_CREATE_ACL` (3006), `AUTH_UPDATE_ACL` (3007), `AUTH_DELETE_ACL` (3008) and `AUTH_LIST_ACL` (3010)
+  - Users and rules are read from and applied to every master broker, with per-broker errors surfaced in the UI
+  - Optional ACL credentials on the connection bar; requests are signed with `AccessKey` + `Signature` (HMAC-SHA1 over sorted ext fields and body)
+  - New ACL page with Users and ACL Rules tabs (actions: Pub/Sub/Any/Create/Update/Delete/Get/List/All; decisions: Allow/Deny)
+- **Cluster + Dashboard (phase 4)**
+  - Broker runtime info via `GET_BROKER_RUNTIME_INFO` (28), parsed from the `table` payload
+  - Dashboard KPIs (brokers / topics / consumer groups / produce TPS / consume TPS) with a 5s polling loop
+  - Produce/Consume TPS trend chart (Recharts, 60-sample window) with chart/table view toggle
+  - Cluster topology (cluster → broker → master/slave addresses) and a searchable runtime-info modal
+  - Broker stats commands for `VIEW_BROKER_STATS_DATA` (107) and `GET_BROKER_CONSUME_STATS` (109); the 5.3.2 broker reports them as unsupported
 - **Message trace (phase 6)**
   - Trace lookup by message ID and by business key
   - Queries `RMQ_SYS_TRACE_TOPIC` via `QUERY_MESSAGE` (12), with an optional custom trace topic
@@ -21,13 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Offset reset to latest, earliest or a custom value, for one queue or all queues
 
 ### Fixed
+- Tailwind CSS is now installed and wired in (v4 + `@tailwindcss/vite`), so utility classes used across existing pages actually apply
+- Errors are stringified before rendering, so an `Error` object can no longer crash a page
 - Consumer group listing used request code 200 (`UPDATE_AND_CREATE_SUBSCRIPTIONGROUP`); corrected to 201
 - Connection list used request code 204 (`GET_CONSUMER_RUNNING_INFO`); corrected to 203
 - `QUERY_CONSUMER_OFFSET` now sends `queueId` and reads the offset from the response header
 
 ### Planned
-- Real-time monitoring dashboard (TPS / Message lag / Cluster health)
-- Producer query, ACL permission management
+- Producer query
 
 ## [0.3.0-alpha] - 2026-10-20
 

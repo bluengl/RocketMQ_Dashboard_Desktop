@@ -10,8 +10,8 @@
 
 | 状态 | 内容 |
 |------|------|
-| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点、Message Trace（按 msgId/Key） |
-| ❌ 缺失 | Producer、ACL、OPS；Dashboard/Cluster 的统计与拓扑 |
+| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点、Message Trace（按 msgId/Key）、Cluster 运行时信息/拓扑、Dashboard TPS 趋势 |
+| ❌ 缺失 | Producer、ACL、OPS |
 
 **阶段 0–3 已修复的历史 bug**
 1. `consumer.rs` 曾读取托管 `State`（恒 `None`），与 `connect_cluster` 写入的 `GLOBAL_CLIENT` 不相通；已统一为 `GLOBAL_CLIENT`。
@@ -116,12 +116,25 @@
 
 ---
 
-## 阶段 4：Cluster + Dashboard 完善（预计 2–3 天）
+## 阶段 4：Cluster + Dashboard 完善（已完成，2026-10-20）
 
-- Broker 运行时信息：`GET_BROKER_RUNTIME_INFO`（28）。
-- Broker 统计：`VIEW_BROKER_STATS_DATA`（107）、`GET_BROKER_CONSUME_STATS`（109）。
-- 集群拓扑可视化。
-- Dashboard TPS / 消息量趋势图（前端图表，需引入图表库并遵循 dataviz 规范）。
+### 后端（已实现）
+- Broker 运行时信息：`GET_BROKER_RUNTIME_INFO`（28，发送到 Broker），响应 `{"table": {...}}`，解析为 key/value 表。
+- Dashboard 聚合指标：`get_dashboard_metrics` 聚合全部 master broker 的版本、运行时长、`putTps`/`getTotalTps`（取首个采样值）、今日消息量，并汇总 topic / 消费组数量。
+- Broker 统计命令：`get_broker_stats_data`（107）、`get_broker_consume_stats`（109）已实现；5.3.2 Broker 返回 `request type not supported`，命令会明确报错。
+- `BrokerInfo` 增加 `master_addr` / `slave_addrs`，按 broker id 区分主从。
+- 新命令：`get_dashboard_metrics`、`get_broker_runtime_info`、`get_broker_stats_data`、`get_broker_consume_stats`。
+
+### 前端（已实现）
+- 新增 `src/DashboardPage.tsx`：KPI 卡片、Produce/Consume TPS 双线趋势图（每 5 秒采样、保留 60 点）、图表/表格视图切换、Broker 指标明细表。
+- 新增 `src/ClusterPage.tsx`：集群 → Broker → 主从地址拓扑、Broker 列表、运行时信息弹窗（关键指标 + 全量 key/value 搜索）。
+- 引入 `recharts`；配色用 dataviz 校验器在深色卡片背景 `#1e293b` 上验证通过（蓝 `#3987e5` / 橙 `#d95926`）。
+- `App.tsx` 移除内联 Dashboard 与 5 秒集群轮询，改由新页面自行轮询。
+
+### 验证
+- Node 探测脚本直连测试集群（192.168.153.149:9876）：28 返回 `{"table": {...}}`；107/109 返回 code=3 `request type ... not supported`（Broker 版本 V5_3_2）。
+- `cargo check`、`tsc --noEmit`、`npm run build` 全部通过。
+- Vite 预览中注入 Tauri invoke stub，实测 Dashboard 图表/表格、Cluster 拓扑、运行时弹窗均正常渲染。
 
 ### 验收标准
 - 能查看 Broker 运行时详情与统计；Dashboard 有 TPS/消息量趋势。
@@ -152,10 +165,30 @@
 
 ---
 
-## 阶段 7：ACL 权限管理（预计 2 天）
+## 阶段 7：ACL 权限管理（已完成，2026-10-20）
 
-- 用户 CRUD 与权限配置（**待核实 ACL 相关请求码**）。
-- 前端 ACL 页面（用户列表、权限编辑）。
+> 请求码与报文格式已核实（RocketMQ 5.5.0 源码 + 本机 5.3.2 Broker 实测）。旧版 ACL 协议码 50–54 在 5.3.2 上不完整（54 返回 not supported），因此采用 ACL 2.0。
+
+### 后端（已实现）
+- 用户：`AUTH_CREATE_USER`（3001）、`AUTH_UPDATE_USER`（3002）、`AUTH_DELETE_USER`（3003）、`AUTH_LIST_USER`（3005）。
+- 规则：`AUTH_CREATE_ACL`（3006）、`AUTH_UPDATE_ACL`（3007）、`AUTH_DELETE_ACL`（3008）、`AUTH_LIST_ACL`（3010）。
+- 报文格式与 RocketMQ 5.5 `MQClientAPIImpl` 一致：用户名/过滤条件走 extFields，用户与规则内容走 JSON body。
+- 所有操作广播到全部 master broker，逐 broker 返回结果与错误。
+- 请求签名与 `AclClientRPCHook` 一致：把 `AccessKey` 加入 extFields 后按 key 排序、拼接 value 与 body，HMAC-SHA1 后 Base64 写入 `Signature`。
+
+### 前端（`src/AclPage.tsx`，已实现）
+- Users Tab：用户列表（密码可显隐）、创建/编辑/删除。
+- ACL Rules Tab：按 subject + resource 聚合并展示动作、来源 IP、Allow/Deny，支持创建/编辑/删除。
+- 连接栏可选 ACL 凭据，连接后所有请求自动签名。
+
+### 验证
+- 5.3.2 Broker 实测：`GET_BROKER_CLUSTER_ACL_INFO`（52）返回 “The broker does not enable acl.”；3005 / 3010 被识别但提示 authenticationMetadataProvider 未配置（因 ACL 未启用）。
+- 报文结构、枚举名（`Normal`/`Super`、`enable`/`disable`、`Pub`/`Sub`/`Any`…、`Allow`/`Deny`）与 5.5.0 源码逐项核对通过。
+- `cargo check`、`tsc --noEmit`、`npm run build` 通过；Vite 预览中注入 stub 实测用户/规则列表与表单渲染正常。
+
+### 验收说明
+- 端到端 CRUD 需在 Broker 开启 `authenticationEnabled` / `authorizationEnabled` 后复验；测试集群未启用 ACL。
+- 启用 ACL 的集群可通过连接栏的 Access Key / Secret Key 正常访问。
 
 ---
 
@@ -187,14 +220,21 @@
 | GET_BROKER_RUNTIME_INFO | 28 | ✅ 已确认 |
 | GET_CONSUMER_LIST_BY_GROUP | 38 | ✅ 已确认 |
 | DELETE_TOPIC_IN_NAMESRV | 216 | ✅ 已确认 |
-| VIEW_BROKER_STATS_DATA | 107 | ✅ 已确认 |
-| GET_BROKER_CONSUME_STATS | 109 | ⚠️ 4.7.7 不支持（code=3），5.x 再验证 |
+| VIEW_BROKER_STATS_DATA | 107 | ❌ 5.3.2 Broker 不支持（code=3）；指标改由 28 提供 |
+| GET_BROKER_CONSUME_STATS | 109 | ❌ 5.3.2 Broker 不支持（code=3）；命令已实现，待支持版本复验 |
 | GET_ALL_SUBSCRIPTIONGROUP_CONFIG | 201 | ✅ 已实测（消费组枚举入口，发送到 Broker） |
 | GET_CONSUMER_CONNECTION_LIST | 203 | ✅ 已实测（返回 206 表示组未在线） |
 | GET_CONSUMER_RUNNING_INFO | 204 | ✅ 已确认（不是连接列表） |
 | Message Trace | 12（对 `RMQ_SYS_TRACE_TOPIC` 查询） | ✅ 已确认：无专用请求码，trace 消息的 KEYS 即原 msgId |
 | Producer 查询 | ? | ⚠️ 待核实 |
-| ACL 相关 | ? | ⚠️ 待核实 |
+| AUTH_CREATE_USER | 3001 | ✅ 已确认（5.3.2 实测可用） |
+| AUTH_UPDATE_USER | 3002 | ✅ 已确认 |
+| AUTH_DELETE_USER | 3003 | ✅ 已确认 |
+| AUTH_LIST_USER | 3005 | ✅ 已确认（5.3.2 实测可用） |
+| AUTH_CREATE_ACL | 3006 | ✅ 已确认 |
+| AUTH_UPDATE_ACL | 3007 | ✅ 已确认 |
+| AUTH_DELETE_ACL | 3008 | ✅ 已确认 |
+| AUTH_LIST_ACL | 3010 | ✅ 已确认（5.3.2 实测可用） |
 
 > 阶段 3 已用探测脚本对 4.7.7 测试集群逐项实测；剩余待核实项在对应阶段开始时再确认。
 > 注意：200 是 `UPDATE_AND_CREATE_SUBSCRIPTIONGROUP`，不能用于枚举消费组。

@@ -30,17 +30,18 @@
 ## 🎯 功能
 
 ### ✅ 已完成
-- **连接管理** - 连接/断开 NameServer
-- **集群管理** - 查看 Broker 拓扑、状态监控
-- **Topic 管理** - Topic 列表、详情查看
-- **Consumer 管理** - 消费者组、进度、堆积监控
+- **连接管理** - 连接/断开 NameServer，可选 ACL 凭据
+- **集群管理** - Broker 拓扑、运行时信息、Produce/Consume TPS 趋势
+- **Topic 管理** - 列表、路由、新建、删除
+- **Consumer 管理** - 消费组、逐队列进度、在线实例、重置位点、消费 TPS
+- **消息查询** - Message ID / Key / Topic + 时间范围
+- **消息轨迹** - Pub / SubAfter / EndTransaction / Recall 时间轴（需开启 trace）
+- **ACL** - ACL 2.0 用户与规则 CRUD（需开启 ACL）
 
 ### 🚧 开发中
-- 消息查询（ID / Key / Offset）
-- 实时监控（TPS / 堆积 / 健康度）
-- 运维工具（重置位点 / 发送消息）
-- ACL 权限管理
-- 消息轨迹
+- Producer 连接查询
+- OPS（Nameserver 管理 / 多集群切换）
+- 打包发布与打磨
 
 ### 与 rocketmq-dashboard 功能对照
 
@@ -49,14 +50,14 @@
 | 模块 | 状态 | 说明 |
 |------|------|------|
 | OPS | ❌ | Nameserver 管理、多集群切换 |
-| Dashboard | ⚠️ | 仅 Broker/Topic 数，Group 恒为 0，无 TPS 趋势 |
-| Cluster | ⚠️ | Broker 列表内联于 Dashboard，无独立页/详情/拓扑 |
-| Topic | ⚠️ | 仅名称列表 + 搜索，无新增/删除/详情/路由 |
-| Consumer | ⚠️ | 后端命令已有，存在连接状态 bug、前端未接线 |
+| Dashboard | ✅ | 概览指标 + TPS 趋势图 |
+| Cluster | ✅ | 独立页面、运行时信息、拓扑 |
+| Topic | ✅ | 列表、路由、新建、删除（更新配置 ❌） |
+| Consumer | ✅ | 组列表、进度、在线实例、重置位点 |
 | Producer | ❌ | 生产者连接查询 |
-| Message | ❌ | 按 Topic/Key/ID/时间查询 |
-| Message Trace | ❌ | 消息轨迹 |
-| ACL | ❌ | 用户与权限管理 |
+| Message | ✅ | 按 Topic/Key/ID/时间查询 |
+| Message Trace | ✅ | 需 Broker 开启 trace |
+| ACL | ✅ | 需 Broker 开启 ACL |
 
 ---
 

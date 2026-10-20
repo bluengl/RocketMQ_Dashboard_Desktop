@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { CheckCircle2, GitBranch, RefreshCw, Search, Send, Inbox, XCircle } from 'lucide-react'
 import type { ConsumerStatus, TraceNode, TraceRecord } from './types'
+import { errorMessage } from './utils/errors'
 
 interface TracePageProps {
   connected: boolean
@@ -73,7 +74,7 @@ export default function TracePage({ connected, initialMsgId }: TracePageProps) {
       setRecord(result)
     } catch (err) {
       setRecord(null)
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }

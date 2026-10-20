@@ -50,22 +50,30 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 #### 3. Topic 管理
 - ✅ Topic 列表查询
-- ✅ Topic 详细信息展示
+- ✅ Topic 路由查看
+- ✅ 新建 / 删除 Topic
 - ✅ 搜索和过滤功能
 
 #### 4. Consumer 管理
 - ✅ 消费者组列表
-- ✅ 消费进度查询
-- ✅ 在线实例监控
-- ✅ 堆积量统计和告警
+- ✅ 消费进度查询（逐队列 offset / lag）
+- ✅ 在线实例监控（203 + 连接列表）
+- ✅ 重置消费位点（最新 / 最早 / 指定值）
+- ✅ 消费 TPS 采样
+
+#### 5. 消息与轨迹
+- ✅ 按 Message ID / Key / Topic + 时间范围查询消息
+- ✅ 消息轨迹（Pub / SubAfter / EndTransaction / Recall 时间轴，需 `traceTopicEnable=true`）
+
+#### 6. Dashboard / Cluster / ACL
+- ✅ Broker 运行时指标、Produce/Consume TPS 趋势图、集群拓扑
+- ✅ ACL 2.0 用户与规则 CRUD（需 Broker 开启 ACL；连接栏可配置 Access Key / Secret Key）
 
 ### 开发中功能
 
-- 🚧 消息查询（按 ID / Key / Offset）
-- 🚧 Dashboard 实时监控（TPS、堆积、健康度）
-- 🚧 运维工具（重置位点、发送测试消息）
-- 🚧 ACL 权限管理
-- 🚧 消息轨迹查询
+- 🚧 Producer 连接查询
+- 🚧 OPS（Nameserver 管理、多集群切换）
+- 🚧 打包发布与打磨（分页 / 虚拟滚动 / 错误分类）
 
 ### 与 Apache RocketMQ Dashboard 功能对照
 
@@ -74,22 +82,22 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 | 模块 | 功能 | 状态 |
 |------|------|------|
 | OPS | Nameserver 管理、多集群切换 | ❌ 未实现 |
-| Dashboard | Broker / Topic / Group 概览统计 | ⚠️ 部分（Broker ✅、Topic ✅、Group 恒为 0） |
-| Dashboard | TPS / 消息量趋势统计 | ❌ 未实现 |
-| Cluster | Broker 列表 | ✅ 已实现（内联于 Dashboard 页） |
-| Cluster | 独立页面、Broker 详情、运行时信息、拓扑图 | ❌ 未实现 |
-| Topic | Topic 列表 + 搜索 | ✅ 已实现（仅名称） |
-| Topic | 新增 / 删除 / 更新 | ❌ 未实现 |
-| Topic | 详情（状态 / 路由） | ❌ 未实现 |
-| Topic | 发送测试消息 / 重置消费位点 | ❌ 未实现 |
-| Consumer | 消费组列表 | ⚠️ 后端已实现，存在连接状态 bug |
-| Consumer | 消费进度 / 在线实例 | ⚠️ 后端已实现，前端未接线 |
-| Consumer | 重置消费位点 | ❌ 未实现 |
+| Dashboard | Broker / Topic / Group 概览统计 | ✅ 已实现 |
+| Dashboard | TPS / 消息量趋势统计 | ✅ 已实现（5s 采样，60 点） |
+| Cluster | Broker 列表 | ✅ 已实现 |
+| Cluster | 独立页面、Broker 详情、运行时信息、拓扑图 | ✅ 已实现 |
+| Topic | Topic 列表 + 搜索 | ✅ 已实现 |
+| Topic | 新增 / 删除 / 路由查看 | ✅ 已实现（更新配置 ❌） |
+| Topic | 详情（状态 / 路由） | ⚠️ 路由 ✅，状态 ❌ |
+| Topic | 发送测试消息 | ❌ 未实现 |
+| Consumer | 消费组列表 | ✅ 已实现 |
+| Consumer | 消费进度 / 在线实例 | ✅ 已实现 |
+| Consumer | 重置消费位点 | ✅ 已实现 |
 | Producer | 生产者连接查询（RocketMQ 5.x） | ❌ 未实现 |
-| Message | 按 Topic / Key / 时间范围查询消息 | ❌ 未实现 |
-| Message | 按 Message ID 查询消息详情 | ❌ 未实现 |
-| Message Trace | 消息轨迹查询 | ❌ 未实现 |
-| ACL | 用户与权限管理 | ❌ 未实现 |
+| Message | 按 Topic / Key / 时间范围查询消息 | ✅ 已实现 |
+| Message | 按 Message ID 查询消息详情 | ✅ 已实现 |
+| Message Trace | 消息轨迹查询 | ✅ 已实现（需 Broker 开启 trace） |
+| ACL | 用户与权限管理 | ✅ 已实现（需 Broker 开启 ACL） |
 
 ---
 

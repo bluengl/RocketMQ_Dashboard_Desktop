@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { DashboardMetrics, TpsSample } from './types/broker'
+import { errorMessage } from './utils/errors'
 import './styles/monitor.css'
 
 const POLL_INTERVAL_MS = 5000
@@ -103,7 +104,7 @@ export default function DashboardPage({ connected }: DashboardPageProps) {
         ].slice(-MAX_SAMPLES),
       )
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }

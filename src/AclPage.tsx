@@ -6,6 +6,7 @@ import type {
   BrokerAclRules,
   BrokerAclUsers,
 } from './types'
+import { errorMessage } from './utils/errors'
 
 interface AclPageProps {
   connected: boolean
@@ -95,7 +96,7 @@ export default function AclPage({ connected }: AclPageProps) {
       setUserResults(users)
       setRuleResults(rules)
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -212,7 +213,7 @@ export default function AclPage({ connected }: AclPageProps) {
       setShowUserForm(false)
       await load()
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setSavingUser(false)
     }
@@ -225,7 +226,7 @@ export default function AclPage({ connected }: AclPageProps) {
       await invoke('delete_acl_user', { username })
       await load()
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     }
   }
 
@@ -285,7 +286,7 @@ export default function AclPage({ connected }: AclPageProps) {
       setShowRuleForm(false)
       await load()
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setSavingRule(false)
     }
@@ -301,7 +302,7 @@ export default function AclPage({ connected }: AclPageProps) {
       })
       await load()
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     }
   }
 

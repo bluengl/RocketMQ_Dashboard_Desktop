@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Database, RefreshCw, X } from 'lucide-react'
 import type { BrokerInfo, ClusterInfo } from './types'
+import { errorMessage } from './utils/errors'
 import './styles/monitor.css'
 
 type RuntimeTable = Record<string, string>
@@ -77,7 +78,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
       )
       setRuntimeMap(next)
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -121,7 +122,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
       setRuntime(table)
       setRuntimeMap((prev) => ({ ...prev, [broker.broker_name]: table }))
     } catch (err) {
-      setRuntimeError(err as string)
+      setRuntimeError(errorMessage(err))
     } finally {
       setRuntimeLoading(false)
     }
