@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Search, Send, RefreshCw, Users, AlertCircle } from 'lucide-react'
+import { Search, Send, RefreshCw, Users } from 'lucide-react'
 import type { ProducerConnectionInfo } from './types'
 import { errorMessage } from './utils/errors'
+import Pagination from './components/Pagination'
+import ErrorNotice from './components/ErrorNotice'
+import { usePagination } from './hooks/usePagination'
 
 interface ProducerPageProps {
   connected: boolean
@@ -70,6 +73,7 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
   const filteredGroups = groups.filter((group) =>
     group.toLowerCase().includes(searchQuery.toLowerCase())
   )
+  const groupPager = usePagination(filteredGroups, 15)
 
   return (
     <div className="space-y-6">
@@ -107,12 +111,7 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
         />
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          {error}
-        </div>
-      )}
+      {error && <ErrorNotice error={error} />}
 
       {!connected ? (
         <div className="text-center py-12 text-slate-400">
@@ -135,7 +134,7 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
                   {searchQuery ? 'No groups match your search' : 'No producer groups found'}
                 </div>
               ) : (
-                filteredGroups.map((group) => (
+                groupPager.pageItems.map((group) => (
                   <button
                     key={group}
                     onClick={() => selectGroup(group)}
@@ -150,6 +149,14 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
                 ))
               )}
             </div>
+            <Pagination
+              page={groupPager.page}
+              pageSize={groupPager.pageSize}
+              total={groupPager.total}
+              totalPages={groupPager.totalPages}
+              onPageChange={groupPager.setPage}
+              onPageSizeChange={groupPager.setPageSize}
+            />
           </div>
 
           <div className="col-span-2 space-y-4">
@@ -206,11 +213,7 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
                     Online Connections
                   </div>
 
-                  {connectionsError && (
-                    <div className="px-4 py-3 text-sm text-red-400 border-b border-slate-700">
-                      {connectionsError}
-                    </div>
-                  )}
+                  {connectionsError && <ErrorNotice error={connectionsError} compact />}
 
                   {connectionsLoading ? (
                     <div className="text-center py-10 text-slate-400 text-sm">

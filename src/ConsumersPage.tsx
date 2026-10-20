@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Users, RefreshCw, Search, AlertCircle, RotateCcw, Radio, List, X } from 'lucide-react'
+import { Users, RefreshCw, Search, RotateCcw, Radio, List, X } from 'lucide-react'
 import type {
   ConsumerConnection,
   ConsumerConnectionInfo,
   ConsumerProgress,
 } from './types'
+import Pagination from './components/Pagination'
+import ErrorNotice from './components/ErrorNotice'
+import { usePagination } from './hooks/usePagination'
 
 interface ConsumersPageProps {
   connected: boolean
@@ -204,6 +207,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
   const filteredGroups = groups.filter((group) =>
     group.toLowerCase().includes(searchQuery.toLowerCase())
   )
+  const groupPager = usePagination(filteredGroups, 15)
 
   const totalLag = progress.reduce((sum, row) => sum + row.lag, 0)
   const maxLag = progress.reduce((max, row) => Math.max(max, row.lag), 0)
@@ -247,12 +251,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
         />
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          {error}
-        </div>
-      )}
+      {error && <ErrorNotice error={error} />}
 
       {resetMessage && (
         <div className="p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-cyan-300">
@@ -282,7 +281,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                   {searchQuery ? 'No groups match your search' : 'No consumer groups found'}
                 </div>
               ) : (
-                filteredGroups.map((group) => (
+                groupPager.pageItems.map((group) => (
                   <button
                     key={group}
                     onClick={() => selectGroup(group)}
@@ -297,6 +296,14 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                 ))
               )}
             </div>
+            <Pagination
+              page={groupPager.page}
+              pageSize={groupPager.pageSize}
+              total={groupPager.total}
+              totalPages={groupPager.totalPages}
+              onPageChange={groupPager.setPage}
+              onPageSizeChange={groupPager.setPageSize}
+            />
           </div>
 
           {/* Detail */}

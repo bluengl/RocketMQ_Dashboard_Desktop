@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { List, RefreshCw, Plus, Trash2, Search, Route } from 'lucide-react'
 import type { TopicRouteData } from './types'
+import Pagination from './components/Pagination'
+import ErrorNotice from './components/ErrorNotice'
+import { usePagination } from './hooks/usePagination'
 
 interface TopicsPageProps {
   connected: boolean
@@ -121,6 +124,8 @@ export default function TopicsPage({ connected }: TopicsPageProps) {
       !topic.startsWith('DefaultCluster_')
   )
 
+  const topicsPager = usePagination(userTopics, 20)
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -165,9 +170,7 @@ export default function TopicsPage({ connected }: TopicsPageProps) {
         />
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">{error}</div>
-      )}
+      {error && <ErrorNotice error={error} />}
 
       {!connected ? (
         <div className="text-center py-12 text-slate-400">Please connect to RocketMQ to view topics</div>
@@ -187,7 +190,7 @@ export default function TopicsPage({ connected }: TopicsPageProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
-                {userTopics.map((topic, index) => (
+                {topicsPager.pageItems.map((topic, index) => (
                   <tr key={index} className="hover:bg-slate-750 transition-colors">
                     <td className="px-6 py-4">
                       <div className="font-medium text-slate-100">{topic}</div>
@@ -214,6 +217,14 @@ export default function TopicsPage({ connected }: TopicsPageProps) {
                 ))}
               </tbody>
             </table>
+            <Pagination
+              page={topicsPager.page}
+              pageSize={topicsPager.pageSize}
+              total={topicsPager.total}
+              totalPages={topicsPager.totalPages}
+              onPageChange={topicsPager.setPage}
+              onPageSizeChange={topicsPager.setPageSize}
+            />
           </div>
 
           {/* Route detail */}

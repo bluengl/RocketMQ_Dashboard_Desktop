@@ -7,6 +7,9 @@ import type {
   BrokerAclUsers,
 } from './types'
 import { errorMessage } from './utils/errors'
+import Pagination from './components/Pagination'
+import ErrorNotice from './components/ErrorNotice'
+import { usePagination } from './hooks/usePagination'
 
 interface AclPageProps {
   connected: boolean
@@ -163,6 +166,8 @@ export default function AclPage({ connected }: AclPageProps) {
   }, [ruleResults])
 
   const brokerErrors = [...userResults, ...ruleResults].filter((result) => result.error)
+  const userPager = usePagination(users, 20)
+  const rulePager = usePagination(rules, 20)
 
   const openCreateUser = () => {
     setEditingUser(false)
@@ -382,11 +387,7 @@ export default function AclPage({ connected }: AclPageProps) {
         ))}
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
-          {error}
-        </div>
-      )}
+      {error && <ErrorNotice error={error} />}
 
       {brokerErrors.length > 0 && (
         <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-300 text-sm space-y-1">
@@ -430,7 +431,7 @@ export default function AclPage({ connected }: AclPageProps) {
                     </td>
                   </tr>
                 ) : (
-                  users.map(({ user, brokers }) => (
+                  userPager.pageItems.map(({ user, brokers }) => (
                     <tr key={user.username} className="hover:bg-slate-750 transition-colors">
                       <td className="px-4 py-3 font-mono text-sm text-slate-100">
                         {user.username}
@@ -505,6 +506,14 @@ export default function AclPage({ connected }: AclPageProps) {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={userPager.page}
+            pageSize={userPager.pageSize}
+            total={userPager.total}
+            totalPages={userPager.totalPages}
+            onPageChange={userPager.setPage}
+            onPageSizeChange={userPager.setPageSize}
+          />
         </div>
       ) : (
         <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
@@ -529,7 +538,7 @@ export default function AclPage({ connected }: AclPageProps) {
                     </td>
                   </tr>
                 ) : (
-                  rules.map((rule) => (
+                  rulePager.pageItems.map((rule) => (
                     <tr key={rule.key} className="hover:bg-slate-750 transition-colors">
                       <td className="px-4 py-3 font-mono text-sm text-slate-100">
                         {rule.subject}
@@ -580,6 +589,14 @@ export default function AclPage({ connected }: AclPageProps) {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={rulePager.page}
+            pageSize={rulePager.pageSize}
+            total={rulePager.total}
+            totalPages={rulePager.totalPages}
+            onPageChange={rulePager.setPage}
+            onPageSizeChange={rulePager.setPageSize}
+          />
         </div>
       )}
 
@@ -590,11 +607,7 @@ export default function AclPage({ connected }: AclPageProps) {
               {editingUser ? 'Edit ACL User' : 'Create ACL User'}
             </h3>
 
-            {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-                {error}
-              </div>
-            )}
+            {error && <ErrorNotice error={error} compact />}
 
             <div>
               <label className="text-sm text-slate-400 block mb-1">Username</label>
@@ -679,11 +692,7 @@ export default function AclPage({ connected }: AclPageProps) {
               {editingRule ? 'Edit ACL Rule' : 'Create ACL Rule'}
             </h3>
 
-            {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-                {error}
-              </div>
-            )}
+            {error && <ErrorNotice error={error} compact />}
 
             <div>
               <label className="text-sm text-slate-400 block mb-1">Subject</label>

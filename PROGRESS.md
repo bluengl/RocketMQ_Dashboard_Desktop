@@ -1,6 +1,6 @@
 # RocketMQ Dashboard 桌面版 - 开发进度
 
-> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 4 Cluster + Dashboard（运行时信息/拓扑/TPS 趋势）、阶段 5 Producer 查询、阶段 6 Message Trace、阶段 7 ACL（用户/规则 CRUD + 请求签名）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 4 Cluster + Dashboard（运行时信息/拓扑/TPS 趋势）、阶段 5 Producer 查询、阶段 6 Message Trace、阶段 7 ACL（用户/规则 CRUD + 请求签名）、阶段 8 OPS/多集群/分页/错误分类/打包配置 已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ## 项目概述
 基于 Tauri 2 + React 18 + TypeScript 的 RocketMQ 管理控制台桌面应用
@@ -114,11 +114,18 @@
 - 前端使用 `recharts`，图表配色经 dataviz 校验器在深色卡片背景上验证
 - `VIEW_BROKER_STATS_DATA`（107）与 `GET_BROKER_CONSUME_STATS`（109）命令已实现，但 5.3.2 Broker 返回 "request type not supported"，需在支持该请求码的版本上使用
 
-### 📋 9. 运维工具（0%）
-- [ ] 重置消费位点
-- [ ] 发送测试消息
-- [ ] 清理过期消息
-- [ ] 配置管理
+### ✅ 9. OPS + 多集群 + 打磨（100%）
+- [x] NameServer Profile 管理（增删改、ACL 凭据、localStorage 持久化）
+- [x] 多集群切换（连接前自动断开当前集群）
+- [x] 列表分页（Topic / Consumer / Producer / Message / ACL，10–100 条每页）
+- [x] 错误分类展示（Connection / Protocol / Data / Unknown）
+- [x] 多平台图标、`build:desktop` 脚本、`v*` 标签 CI 发布工作流
+
+**实现要点**:
+- `src/OpsPage.tsx` 与连接栏共用 `connectTo`，切换集群时先断开再连接
+- `usePagination` + `Pagination` 组件统一分页交互
+- `ErrorNotice` + `classifyError` 按连接 / 协议 / 数据错误分类并高亮
+- 安装包需在对应操作系统构建；CI 产物为 Draft Release，需人工确认发布
 
 ### ✅ 10. ACL 权限管理（100%）
 - [x] 用户列表（用户名 / 密码 / 类型 / 状态，按 broker 聚合去重）
@@ -224,11 +231,11 @@ rocketmqMg/
 
 ## 下一步计划
 
-1. **ACL 权限管理** (阶段 7)
-   - 需先核实 ACL 相关请求码
+1. **安装包验证**
+   - 在 Windows / macOS / Linux 上执行 `npm run build:desktop`，验证安装与启动
 
-2. **OPS + 多集群 + 打包** (阶段 8)
-   - 多集群切换、大数据量分页、错误分类、打包发布
+2. **可选运维工具**
+   - 发送测试消息、清理过期消息
 
 ## 已知问题
 

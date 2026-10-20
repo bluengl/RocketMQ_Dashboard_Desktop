@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { MessageSquare, Search, RefreshCw, KeyRound, Clock, GitBranch } from 'lucide-react'
 import type { MessageInfo } from './types'
+import { errorMessage } from './utils/errors'
+import Pagination from './components/Pagination'
+import ErrorNotice from './components/ErrorNotice'
+import { usePagination } from './hooks/usePagination'
 
 interface MessagePageProps {
   connected: boolean
@@ -34,6 +38,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
   const [selected, setSelected] = useState<MessageInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const messagePager = usePagination(messages, 20)
 
   const searchById = async () => {
     if (!msgId.trim()) return
@@ -44,7 +49,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
       setMessages(result)
       setSelected(result[0] ?? null)
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -62,7 +67,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
       setMessages(result)
       setSelected(result[0] ?? null)
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -81,7 +86,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
       setMessages(result)
       setSelected(result[0] ?? null)
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -184,11 +189,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
         </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
-          {error}
-        </div>
-      )}
+      {error && <ErrorNotice error={error} />}
 
       {!connected ? (
         <div className="text-center py-12 text-slate-400">Please connect to RocketMQ to query messages</div>
@@ -207,7 +208,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
               {messages.length} message{messages.length !== 1 ? 's' : ''}
             </div>
             <div className="divide-y divide-slate-700 max-h-96 overflow-y-auto">
-              {messages.map((m, i) => (
+              {messagePager.pageItems.map((m, i) => (
                 <button
                   key={m.msgId ?? i}
                   onClick={() => setSelected(m)}
@@ -222,6 +223,14 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
                 </button>
               ))}
             </div>
+            <Pagination
+              page={messagePager.page}
+              pageSize={messagePager.pageSize}
+              total={messagePager.total}
+              totalPages={messagePager.totalPages}
+              onPageChange={messagePager.setPage}
+              onPageSizeChange={messagePager.setPageSize}
+            />
           </div>
 
           {/* Message detail */}

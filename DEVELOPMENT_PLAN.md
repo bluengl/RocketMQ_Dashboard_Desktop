@@ -11,7 +11,7 @@
 | 状态 | 内容 |
 |------|------|
 | ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点、Message Trace（按 msgId/Key）、Cluster 运行时信息/拓扑、Dashboard TPS 趋势、Producer 组/在线连接 |
-| ❌ 缺失 | OPS |
+| ❌ 缺失 | 额外运维工具（发送测试消息、清理过期消息） |
 
 **阶段 0–3 已修复的历史 bug**
 1. `consumer.rs` 曾读取托管 `State`（恒 `None`），与 `connect_cluster` 写入的 `GLOBAL_CLIENT` 不相通；已统一为 `GLOBAL_CLIENT`。
@@ -207,12 +207,32 @@
 
 ---
 
-## 阶段 8：OPS + 多集群 + 打磨（预计 2–3 天）
+## 阶段 8：OPS + 多集群 + 打磨（已完成，2026-10-20）
 
-- Nameserver 管理、多集群切换。
-- 大数据量场景：分页 / 虚拟滚动。
-- 错误处理完善（区分连接 / 协议 / 数据错误）。
-- 打包发布（Windows/macOS/Linux）。
+### OPS / 多集群（已实现）
+- 新增 `src/OpsPage.tsx`：NameServer Profile 的增删改、ACL 凭据保存、当前连接状态。
+- Profile 持久化在 localStorage（`rocketmq.clusterProfiles`）。
+- 切换集群时自动断开当前连接，再连接目标 NameServer；连接栏与 OPS 页共用同一连接逻辑。
+
+### 大数据量（已实现）
+- 新增 `usePagination` hook 与 `Pagination` 组件（10 / 20 / 50 / 100 每页）。
+- 应用于 Topic、Consumer 组、Producer 组、消息列表、ACL 用户与规则。
+
+### 错误处理（已实现）
+- `utils/errors.ts` 增加 `classifyError`：区分 Connection / Protocol / Data / Unknown。
+- 新增 `ErrorNotice` 组件，在 Dashboard、Cluster、Trace、ACL、Topic、Consumer、Producer、Message 页面统一显示分类标签。
+
+### 打包发布（已实现）
+- 生成多平台图标并配置 `tauri.conf.json` 的 `bundle.icon`。
+- 新增 `build:desktop` / `build:desktop:debug` 脚本。
+- 新增 `.github/workflows/release.yml`：推送 `v*` 标签时在 Windows、macOS（x64 + arm64）、Ubuntu 构建并创建 Draft Release。
+
+### 验证
+- `cargo check`、`tsc --noEmit`、`npm run build` 通过；Vite 预览中验证 OPS 页、分页与错误分类渲染。
+- 未在 CI 或目标系统上实际执行完整安装包构建（需要对应平台与签名配置）。
+
+### 遗留
+- 发送测试消息、清理过期消息等额外运维工具未实现（不在本阶段验收范围）。
 
 ---
 

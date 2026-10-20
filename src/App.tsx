@@ -9,6 +9,9 @@ import TracePage from './TracePage'
 import DashboardPage from './DashboardPage'
 import ClusterPage from './ClusterPage'
 import AclPage from './AclPage'
+import OpsPage from './OpsPage'
+import type { ClusterProfile } from './types'
+import { errorMessage } from './utils/errors'
 import './App.css'
 
 type Page = 'dashboard' | 'topics' | 'consumers' | 'producers' | 'messages' | 'cluster' | 'acl' | 'trace' | 'ops'
@@ -24,28 +27,45 @@ function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const [traceTarget, setTraceTarget] = useState<string | null>(null)
 
-  const handleConnect = async () => {
+  const connectTo = async (
+    server: string,
+    useAcl: boolean,
+    access: string,
+    secret: string
+  ): Promise<boolean> => {
     setConnecting(true)
     setError(null)
 
     try {
+      if (connected) {
+        await invoke('disconnect_cluster')
+        setConnected(false)
+      }
       await invoke('connect_cluster', {
         config: {
-          name_server_addrs: [nameServer],
-          acl_enabled: aclEnabled,
-          access_key: aclEnabled ? accessKey : null,
-          secret_key: aclEnabled ? secretKey : null,
+          name_server_addrs: [server],
+          acl_enabled: useAcl,
+          access_key: useAcl ? access : null,
+          secret_key: useAcl ? secret : null,
         },
       })
+      setNameServer(server)
+      setAclEnabled(useAcl)
+      setAccessKey(useAcl ? access : '')
+      setSecretKey(useAcl ? secret : '')
       setConnected(true)
+      return true
     } catch (err) {
-      setError(err as string)
+      setError(errorMessage(err))
       setConnected(false)
       console.error('Connection failed:', err)
+      return false
     } finally {
       setConnecting(false)
     }
   }
+
+  const handleConnect = () => connectTo(nameServer, aclEnabled, accessKey, secretKey)
 
   const handleDisconnect = async () => {
     try {
@@ -217,10 +237,21 @@ function App() {
 
           {currentPage === 'acl' && <AclPage connected={connected} />}
 
-          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'producers' && currentPage !== 'messages' && currentPage !== 'trace' && currentPage !== 'cluster' && currentPage !== 'acl' && (
-            <div className="text-center py-20 text-slate-400">
-              <p className="text-lg">{currentPage.toUpperCase()} page - Coming soon</p>
-            </div>
+          {currentPage === 'ops' && (
+            <OpsPage
+              connected={connected}
+              connecting={connecting}
+              currentNameServer={nameServer}
+              onConnect={(profile: ClusterProfile) =>
+                connectTo(
+                  profile.nameServer,
+                  profile.aclEnabled,
+                  profile.accessKey,
+                  profile.secretKey
+                )
+              }
+              onDisconnect={handleDisconnect}
+            />
           )}
         </main>
       </div>

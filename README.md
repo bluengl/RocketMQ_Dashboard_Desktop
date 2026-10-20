@@ -75,8 +75,8 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 ### 开发中功能
 
-- 🚧 OPS（Nameserver 管理、多集群切换）
-- 🚧 打包发布与打磨（分页 / 虚拟滚动 / 错误分类）
+- 🚧 额外运维工具（发送测试消息、清理过期消息）
+- 🚧 安装包在目标平台上的完整验证
 
 ### 与 Apache RocketMQ Dashboard 功能对照
 
@@ -84,7 +84,7 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 | 模块 | 功能 | 状态 |
 |------|------|------|
-| OPS | Nameserver 管理、多集群切换 | ❌ 未实现 |
+| OPS | Nameserver 管理、多集群切换 | ✅ 已实现 |
 | Dashboard | Broker / Topic / Group 概览统计 | ✅ 已实现 |
 | Dashboard | TPS / 消息量趋势统计 | ✅ 已实现（5s 采样，60 点） |
 | Cluster | Broker 列表 | ✅ 已实现 |
@@ -413,23 +413,21 @@ npm run tauri dev
 
 ## 📦 打包发布
 
-### Windows
-```bash
-npm run tauri build
-```
-生成 `.msi` 和 `.exe` 安装包
+桌面安装包需在对应操作系统上构建（Tauri 不支持跨平台交叉打包）。
 
-### macOS
+### 本机构建
 ```bash
-npm run tauri build
+npm ci
+npm run build:desktop        # release build with installers
+npm run build:desktop:debug  # debug build (faster, for verification)
 ```
-生成 `.dmg` 和 `.app` 应用包
+产物位于 `src-tauri/target/release/bundle/`：
+- Windows：`.msi`、`.exe`（NSIS）
+- macOS：`.dmg`、`.app`
+- Linux：`.deb`、`.AppImage`
 
-### Linux
-```bash
-npm run tauri build
-```
-生成 `.deb` 和 `.AppImage` 包
+### CI 发布
+推送 `v*` 标签会触发 `.github/workflows/release.yml`，在 Windows、macOS（x64 + arm64）和 Ubuntu 上构建，并创建一个 GitHub Draft Release。
 
 ---
 

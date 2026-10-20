@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 import type { DashboardMetrics, TpsSample } from './types/broker'
 import { errorMessage } from './utils/errors'
+import ErrorNotice from './components/ErrorNotice'
 import './styles/monitor.css'
 
 const POLL_INTERVAL_MS = 5000
@@ -165,7 +166,7 @@ export default function DashboardPage({ connected }: DashboardPageProps) {
         </div>
       </div>
 
-      {error && <div className="rmq-error">{error}</div>}
+      {error && <ErrorNotice error={error} />}
 
       <div className="rmq-kpi-row">
         <div className="rmq-tile">

@@ -88,6 +88,15 @@ export interface ProducerConnectionInfo {
   version: number
 }
 
+export interface ClusterProfile {
+  id: string
+  name: string
+  nameServer: string
+  aclEnabled: boolean
+  accessKey: string
+  secretKey: string
+}
+
 export interface TraceNode {
   title: string
   timestamp: number

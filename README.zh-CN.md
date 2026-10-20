@@ -40,8 +40,8 @@
 - **ACL** - ACL 2.0 用户与规则 CRUD（需开启 ACL）
 
 ### 🚧 开发中
-- OPS（Nameserver 管理 / 多集群切换）
-- 打包发布与打磨
+- 额外运维工具（发送测试消息 / 清理过期消息）
+- 安装包在目标平台上的完整验证
 
 ### 与 rocketmq-dashboard 功能对照
 
@@ -49,7 +49,7 @@
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| OPS | ❌ | Nameserver 管理、多集群切换 |
+| OPS | ✅ | Nameserver 管理、多集群切换 |
 | Dashboard | ✅ | 概览指标 + TPS 趋势图 |
 | Cluster | ✅ | 独立页面、运行时信息、拓扑 |
 | Topic | ✅ | 列表、路由、新建、删除（更新配置 ❌） |
@@ -78,11 +78,18 @@ cd rocketmq-dashboard-desktop
 npm install
 
 # 启动开发模式
-npm run tauri dev
+npm run dev
 
-# 构建生产版本
-npm run tauri build
+# 构建前端
+npm run build
+
+# 构建桌面安装包
+npm run build:desktop
 ```
+
+## 📦 打包发布
+
+安装包需在对应操作系统上构建（Windows / macOS / Linux），产物位于 `src-tauri/target/release/bundle/`。推送 `v*` 标签会触发 `.github/workflows/release.yml`，在三个平台上构建并创建 GitHub Draft Release。
 
 ---
 

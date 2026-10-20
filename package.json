@@ -6,6 +6,8 @@
     "dev:frontend": "vite",
     "dev": "cargo tauri dev",
     "build": "tsc && vite build",
+    "build:desktop": "cargo tauri build",
+    "build:desktop:debug": "cargo tauri build --debug",
     "tauri": "cargo tauri"
   },
   "dependencies": {

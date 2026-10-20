@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { CheckCircle2, GitBranch, RefreshCw, Search, Send, Inbox, XCircle } from 'lucide-react'
 import type { ConsumerStatus, TraceNode, TraceRecord } from './types'
 import { errorMessage } from './utils/errors'
+import ErrorNotice from './components/ErrorNotice'
 
 interface TracePageProps {
   connected: boolean
@@ -153,11 +154,7 @@ export default function TracePage({ connected, initialMsgId }: TracePageProps) {
         </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
-          {error}
-        </div>
-      )}
+      {error && <ErrorNotice error={error} />}
 
       {!connected ? (
         <div className="text-center py-12 text-slate-400">Please connect to RocketMQ to query traces</div>

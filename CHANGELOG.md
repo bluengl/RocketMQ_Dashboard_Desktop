@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Producer groups via `GET_ALL_PRODUCER_INFO` (328) aggregated across master brokers
   - Online producer clients via `GET_PRODUCER_CONNECTION_LIST` (204), optionally scoped to brokers hosting a topic
   - New Producers page with group search and connection table
+- **OPS and polish (phase 8)**
+  - Multi-cluster NameServer profiles with quick switching, persisted in localStorage
+  - Pagination for topics, consumer/producer groups, messages, ACL users and rules
+  - Error classification (connection / protocol / data) with a shared ErrorNotice component
+  - Multi-platform icons, desktop build scripts and a tagged GitHub release workflow
 - **Cluster + Dashboard (phase 4)**
   - Broker runtime info via `GET_BROKER_RUNTIME_INFO` (28), parsed from the `table` payload
   - Dashboard KPIs (brokers / topics / consumer groups / produce TPS / consume TPS) with a 5s polling loop

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { Database, RefreshCw, X } from 'lucide-react'
 import type { BrokerInfo, ClusterInfo } from './types'
 import { errorMessage } from './utils/errors'
+import ErrorNotice from './components/ErrorNotice'
 import './styles/monitor.css'
 
 type RuntimeTable = Record<string, string>
@@ -167,7 +168,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
         </div>
       </div>
 
-      {error && <div className="rmq-error">{error}</div>}
+      {error && <ErrorNotice error={error} />}
 
       {!connected ? (
         <div className="rmq-card">
@@ -331,7 +332,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
               </button>
             </div>
             <div className="rmq-modal-body">
-              {runtimeError && <div className="rmq-error">{runtimeError}</div>}
+              {runtimeError && <ErrorNotice error={runtimeError} compact />}
               {runtimeLoading ? (
                 <div className="rmq-empty">
                   <RefreshCw size={24} className="rmq-spin" />
