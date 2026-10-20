@@ -23,6 +23,10 @@ fn main() {
             commands::query_message_by_time,
             commands::query_message_trace,
             commands::query_message_trace_by_key,
+            commands::get_dashboard_metrics,
+            commands::get_broker_runtime_info,
+            commands::get_broker_stats_data,
+            commands::get_broker_consume_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

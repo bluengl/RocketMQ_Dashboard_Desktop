@@ -17,6 +17,7 @@ use super::protocol::{
     UPDATE_CONSUMER_OFFSET, GET_MAX_OFFSET, GET_MIN_OFFSET,
     DEFAULT_TRACE_TOPIC, TRACE_CONTENT_SPLITOR, TRACE_FIELD_SPLITOR,
     TOPIC_NOT_EXIST, QUERY_NOT_FOUND, NO_MESSAGE,
+    GET_BROKER_RUNTIME_INFO, VIEW_BROKER_STATS_DATA, GET_BROKER_CONSUME_STATS,
 };
 
 static OPAQUE_COUNTER: AtomicI32 = AtomicI32::new(1);
@@ -44,6 +45,8 @@ pub struct BrokerInfo {
     pub broker_addrs: Vec<String>,
     pub version: String,
     pub online: bool,
+    pub master_addr: Option<String>,
+    pub slave_addrs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +54,33 @@ pub struct ClusterInfo {
     pub brokers: Vec<BrokerInfo>,
     pub total_topics: u32,
     pub total_groups: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrokerMetrics {
+    pub broker_name: String,
+    pub cluster: String,
+    pub broker_addr: String,
+    pub online: bool,
+    pub version: String,
+    pub uptime: String,
+    pub put_tps: f64,
+    pub get_tps: f64,
+    pub msg_put_today: i64,
+    pub msg_get_today: i64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardMetrics {
+    pub brokers: Vec<BrokerMetrics>,
+    pub total_topics: u32,
+    pub total_groups: u32,
+    pub total_put_tps: f64,
+    pub total_get_tps: f64,
+    pub sampled_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,6 +97,7 @@ pub struct ConsumerProgress {
 pub struct RocketMQClient {
     name_server_addrs: Vec<String>,
     current_addr_index: usize,
+    group_count_cache: std::sync::Mutex<Option<(std::time::Instant, u32)>>,
 }
 
 impl RocketMQClient {
@@ -78,6 +109,7 @@ impl RocketMQClient {
         Ok(Self {
             name_server_addrs: config.name_server_addrs,
             current_addr_index: 0,
+            group_count_cache: std::sync::Mutex::new(None),
         })
     }
 
@@ -161,11 +193,20 @@ impl RocketMQClient {
 
         let mut brokers = Vec::new();
         for (_, broker_data) in cluster_response.broker_addr_table.iter() {
-            let addrs: Vec<String> = broker_data
+            let master_addr = broker_data.broker_addrs.get(&0).cloned();
+            let mut slave_addrs: Vec<String> = broker_data
                 .broker_addrs
-                .values()
-                .map(|s| s.clone())
+                .iter()
+                .filter(|(id, _)| **id != 0)
+                .map(|(_, addr)| addr.clone())
                 .collect();
+            slave_addrs.sort();
+
+            let mut addrs: Vec<String> = Vec::new();
+            if let Some(master) = &master_addr {
+                addrs.push(master.clone());
+            }
+            addrs.extend(slave_addrs.iter().cloned());
 
             brokers.push(BrokerInfo {
                 broker_name: broker_data.broker_name.clone(),
@@ -173,6 +214,8 @@ impl RocketMQClient {
                 broker_addrs: addrs,
                 version: "Unknown".to_string(),
                 online: true,
+                master_addr,
+                slave_addrs,
             });
         }
 
@@ -829,6 +872,214 @@ impl RocketMQClient {
 
         Ok(applied)
     }
+
+    fn broker_master_entries(&self) -> Result<Vec<(String, String, String)>, String> {
+        let command = RemotingCommand::new_request(GET_BROKER_CLUSTER_INFO, next_opaque());
+        let (response, body) = self.send_command(&command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Get broker list failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        let info: ClusterInfoResponse = parse_json_normalized(&body)
+            .map_err(|e| format!("Parse broker list failed: {}", e))?;
+
+        Ok(info
+            .broker_addr_table
+            .values()
+            .filter_map(|broker| {
+                broker.broker_addrs.get(&0).map(|addr| {
+                    (
+                        broker.broker_name.clone(),
+                        broker.cluster.clone(),
+                        addr.clone(),
+                    )
+                })
+            })
+            .collect())
+    }
+
+    pub fn get_broker_runtime_info(
+        &self,
+        broker_addr: &str,
+    ) -> Result<HashMap<String, String>, String> {
+        let command = RemotingCommand::new_request(GET_BROKER_RUNTIME_INFO, next_opaque());
+        let (response, body) = self.send_command_to(broker_addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Get broker runtime info failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        if body.is_empty() {
+            return Err("Empty broker runtime info response".to_string());
+        }
+
+        let parsed: serde_json::Value = serde_json::from_slice(&body)
+            .map_err(|e| format!("Parse broker runtime info failed: {}", e))?;
+        let table = parsed
+            .get("table")
+            .or_else(|| parsed.get("runtimeInfo"))
+            .unwrap_or(&parsed);
+        let object = table
+            .as_object()
+            .ok_or_else(|| "Unexpected broker runtime info shape".to_string())?;
+
+        Ok(object
+            .iter()
+            .map(|(key, value)| {
+                let text = value
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| value.to_string());
+                (key.clone(), text)
+            })
+            .collect())
+    }
+
+    fn cached_group_count(&self) -> Result<u32, String> {
+        if let Ok(cache) = self.group_count_cache.lock() {
+            if let Some((sampled_at, count)) = *cache {
+                if sampled_at.elapsed() < Duration::from_secs(30) {
+                    return Ok(count);
+                }
+            }
+        }
+
+        let count = self.get_consumer_groups()?.len() as u32;
+        if let Ok(mut cache) = self.group_count_cache.lock() {
+            *cache = Some((std::time::Instant::now(), count));
+        }
+        Ok(count)
+    }
+
+    pub fn get_dashboard_metrics(&self) -> Result<DashboardMetrics, String> {
+        let entries = self.broker_master_entries()?;
+        let total_topics = self
+            .get_topic_list()
+            .map(|topics| topics.len() as u32)
+            .unwrap_or(0);
+        let total_groups = self.cached_group_count().unwrap_or(0);
+
+        let mut brokers = Vec::new();
+        let mut total_put_tps = 0.0;
+        let mut total_get_tps = 0.0;
+
+        for (broker_name, cluster, broker_addr) in entries {
+            match self.get_broker_runtime_info(&broker_addr) {
+                Ok(table) => {
+                    let put_tps = parse_first_f64(table.get("putTps"));
+                    let get_tps = parse_first_f64(table.get("getTotalTps"));
+                    total_put_tps += put_tps;
+                    total_get_tps += get_tps;
+
+                    brokers.push(BrokerMetrics {
+                        broker_name,
+                        cluster,
+                        broker_addr,
+                        online: true,
+                        version: table
+                            .get("brokerVersionDesc")
+                            .cloned()
+                            .unwrap_or_else(|| "Unknown".to_string()),
+                        uptime: table.get("runtime").cloned().unwrap_or_default(),
+                        put_tps,
+                        get_tps,
+                        msg_put_today: parse_i64(table.get("msgPutTotalTodayNow")),
+                        msg_get_today: parse_i64(table.get("msgGetTotalTodayNow")),
+                        error: None,
+                    });
+                }
+                Err(err) => brokers.push(BrokerMetrics {
+                    broker_name,
+                    cluster,
+                    broker_addr,
+                    online: false,
+                    version: "Unknown".to_string(),
+                    uptime: String::new(),
+                    put_tps: 0.0,
+                    get_tps: 0.0,
+                    msg_put_today: 0,
+                    msg_get_today: 0,
+                    error: Some(err),
+                }),
+            }
+        }
+
+        Ok(DashboardMetrics {
+            brokers,
+            total_topics,
+            total_groups,
+            total_put_tps,
+            total_get_tps,
+            sampled_at: now_millis(),
+        })
+    }
+
+    pub fn get_broker_stats_data(
+        &self,
+        broker_addr: &str,
+        stats_key: &str,
+        stats_name: &str,
+        stats_type: &str,
+    ) -> Result<serde_json::Value, String> {
+        let mut ext = HashMap::new();
+        ext.insert("statsKey".to_string(), stats_key.to_string());
+        ext.insert("statsName".to_string(), stats_name.to_string());
+        ext.insert("statsType".to_string(), stats_type.to_string());
+        let command =
+            RemotingCommand::new_request(VIEW_BROKER_STATS_DATA, next_opaque()).with_ext_fields(ext);
+        let (response, body) = self.send_command_to(broker_addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Broker stats data is unavailable: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        serde_json::from_slice(&body).map_err(|e| format!("Parse broker stats data failed: {}", e))
+    }
+
+    pub fn get_broker_consume_stats(
+        &self,
+        broker_addr: &str,
+        group: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mut command = RemotingCommand::new_request(GET_BROKER_CONSUME_STATS, next_opaque());
+        if let Some(group) = group {
+            let mut ext = HashMap::new();
+            ext.insert("consumerGroup".to_string(), group.to_string());
+            command = command.with_ext_fields(ext);
+        }
+        let (response, body) = self.send_command_to(broker_addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Broker consume stats are unavailable: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        serde_json::from_slice(&body)
+            .map_err(|e| format!("Parse broker consume stats failed: {}", e))
+    }
+
+}
+
+fn parse_first_f64(raw: Option<&String>) -> f64 {
+    raw.and_then(|value| value.split_whitespace().next())
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(0.0)
+}
+
+fn parse_i64(raw: Option<&String>) -> i64 {
+    raw.and_then(|value| value.parse::<i64>().ok()).unwrap_or(0)
 }
 
 /// Parse one trace message body. Contexts are separated by STX and fields by SOH.

@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Activity, Database, List, MessageSquare, Users, Shield, GitBranch, Settings } from 'lucide-react'
 import TopicsPage from './TopicsPage'
 import ConsumersPage from './ConsumersPage'
 import MessagePage from './MessagePage'
 import TracePage from './TracePage'
-import type { ClusterInfo } from './types'
+import DashboardPage from './DashboardPage'
+import ClusterPage from './ClusterPage'
 import './App.css'
 
 type Page = 'dashboard' | 'topics' | 'consumers' | 'messages' | 'cluster' | 'acl' | 'trace' | 'ops'
@@ -15,7 +16,6 @@ function App() {
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [clusterInfo, setClusterInfo] = useState<ClusterInfo | null>(null)
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const [traceTarget, setTraceTarget] = useState<string | null>(null)
 
@@ -33,7 +33,6 @@ function App() {
         },
       })
       setConnected(true)
-      await loadClusterInfo()
     } catch (err) {
       setError(err as string)
       setConnected(false)
@@ -47,29 +46,10 @@ function App() {
     try {
       await invoke('disconnect_cluster')
       setConnected(false)
-      setClusterInfo(null)
     } catch (err) {
       console.error('Disconnect failed:', err)
     }
   }
-
-  const loadClusterInfo = async () => {
-    if (!connected) return
-
-    try {
-      const info = await invoke<ClusterInfo>('get_cluster_info')
-      setClusterInfo(info)
-    } catch (err) {
-      console.error('Failed to load cluster info:', err)
-    }
-  }
-
-  useEffect(() => {
-    if (connected) {
-      const interval = setInterval(loadClusterInfo, 5000)
-      return () => clearInterval(interval)
-    }
-  }, [connected])
 
   const navItems: Array<{ id: Page; icon: typeof Activity; label: string }> = [
     { id: 'dashboard', icon: Activity, label: 'Dashboard' },
@@ -172,108 +152,7 @@ function App() {
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-6">
-          {currentPage === 'dashboard' && (
-            <div className="space-y-6">
-              {/* Stats Cards */}
-              {connected && clusterInfo && (
-                <div className="grid grid-cols-3 gap-6">
-                  <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-cyan-500/10 rounded-lg">
-                        <Database className="w-8 h-8 text-cyan-400" />
-                      </div>
-                      <div>
-                        <div className="text-3xl font-bold text-slate-50">
-                          {clusterInfo.brokers.length}
-                        </div>
-                        <div className="text-sm text-slate-400">Brokers</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-orange-500/10 rounded-lg">
-                        <List className="w-8 h-8 text-orange-400" />
-                      </div>
-                      <div>
-                        <div className="text-3xl font-bold text-slate-50">
-                          {clusterInfo.total_topics}
-                        </div>
-                        <div className="text-sm text-slate-400">Topics</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-green-500/10 rounded-lg">
-                        <Users className="w-8 h-8 text-green-400" />
-                      </div>
-                      <div>
-                        <div className="text-3xl font-bold text-slate-50">
-                          {clusterInfo.total_groups}
-                        </div>
-                        <div className="text-sm text-slate-400">Consumer Groups</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Broker List */}
-              {connected && clusterInfo && (
-                <div className="bg-slate-800 border border-slate-700 rounded-lg">
-                  <div className="px-6 py-4 border-b border-slate-700">
-                    <h3 className="text-lg font-semibold">Broker List</h3>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-slate-900 text-slate-400 text-sm">
-                          <th className="text-left px-6 py-3 font-medium">Broker Name</th>
-                          <th className="text-left px-6 py-3 font-medium">Cluster</th>
-                          <th className="text-left px-6 py-3 font-medium">Address</th>
-                          <th className="text-left px-6 py-3 font-medium">Version</th>
-                          <th className="text-left px-6 py-3 font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-700">
-                        {clusterInfo.brokers.map((broker, index) => (
-                          <tr key={index} className="hover:bg-slate-750 transition-colors">
-                            <td className="px-6 py-4 font-medium">{broker.broker_name}</td>
-                            <td className="px-6 py-4 text-slate-400">{broker.cluster_name}</td>
-                            <td className="px-6 py-4 text-slate-400 font-mono text-sm">
-                              {broker.broker_addrs.join(', ')}
-                            </td>
-                            <td className="px-6 py-4 text-slate-400">{broker.version}</td>
-                            <td className="px-6 py-4">
-                              <span
-                                className={`px-2 py-1 rounded text-xs font-medium ${
-                                  broker.online
-                                    ? 'bg-green-500/10 text-green-400'
-                                    : 'bg-red-500/10 text-red-400'
-                                }`}
-                              >
-                                {broker.online ? 'Online' : 'Offline'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {!connected && (
-                <div className="text-center py-20 text-slate-400">
-                  <Database className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p className="text-lg">Connect to RocketMQ to view dashboard</p>
-                </div>
-              )}
-            </div>
-          )}
+          {currentPage === 'dashboard' && <DashboardPage connected={connected} />}
 
           {currentPage === 'topics' && <TopicsPage connected={connected} />}
 
@@ -293,7 +172,10 @@ function App() {
             <TracePage connected={connected} initialMsgId={traceTarget} />
           )}
 
-          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'messages' && currentPage !== 'trace' && (
+          {currentPage === 'cluster' && <ClusterPage connected={connected} />}
+
+
+          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'messages' && currentPage !== 'trace' && currentPage !== 'cluster' && (
             <div className="text-center py-20 text-slate-400">
               <p className="text-lg">{currentPage.toUpperCase()} page - Coming soon</p>
             </div>
