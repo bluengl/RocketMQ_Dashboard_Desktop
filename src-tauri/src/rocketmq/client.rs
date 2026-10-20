@@ -11,12 +11,15 @@ use sha1::Sha1;
 
 use super::protocol::{
     RemotingCommand, ClusterInfoResponse, TopicListResponse, TopicRouteData, MessageExt,
-    SubscriptionGroupListResponse, ConsumerConnection, TraceNode, ConsumerStatus, TraceRecord,
+    SubscriptionGroupListResponse, ConsumerConnection, ConnectionInfo, ProducerConnection,
+    ProducerTableInfo,
+    TraceNode, ConsumerStatus, TraceRecord,
     GET_BROKER_CLUSTER_INFO, GET_ALL_TOPIC_LIST_FROM_NAMESERVER, GET_ROUTEINFO_BY_TOPIC,
     QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SEARCH_OFFSET_BY_TIMESTAMP, UPDATE_AND_CREATE_TOPIC,
     DELETE_TOPIC_IN_NAMESRV, DELETE_TOPIC_IN_BROKER, SUCCESS,
     GET_ALL_SUBSCRIPTIONGROUP_CONFIG, GET_CONSUMER_CONNECTION_LIST, QUERY_CONSUMER_OFFSET,
     UPDATE_CONSUMER_OFFSET, GET_MAX_OFFSET, GET_MIN_OFFSET,
+    GET_PRODUCER_CONNECTION_LIST, GET_ALL_PRODUCER_INFO,
     DEFAULT_TRACE_TOPIC, TRACE_CONTENT_SPLITOR, TRACE_FIELD_SPLITOR,
     TOPIC_NOT_EXIST, QUERY_NOT_FOUND, NO_MESSAGE,
     GET_BROKER_RUNTIME_INFO, VIEW_BROKER_STATS_DATA, GET_BROKER_CONSUME_STATS,
@@ -1137,6 +1140,118 @@ impl RocketMQClient {
 
         serde_json::from_slice(&body)
             .map_err(|e| format!("Parse broker consume stats failed: {}", e))
+    }
+
+    pub fn get_producer_groups(&self) -> Result<Vec<String>, String> {
+        let addrs = self.broker_master_addrs()?;
+        let mut groups = BTreeSet::new();
+        let mut succeeded = false;
+        let mut last_error = None;
+
+        for addr in &addrs {
+            let command = RemotingCommand::new_request(GET_ALL_PRODUCER_INFO, next_opaque());
+            match self.send_command_to(addr, &command) {
+                Ok((response, body)) if response.code == SUCCESS => {
+                    match serde_json::from_slice::<ProducerTableInfo>(&body) {
+                        Ok(table) => {
+                            groups.extend(
+                                table
+                                    .data
+                                    .into_keys()
+                                    .map(|group| group.trim().to_string())
+                                    .filter(|group| !group.is_empty()),
+                            );
+                            succeeded = true;
+                        }
+                        Err(e) => last_error = Some(format!("{}: {}", addr, e)),
+                    }
+                }
+                Ok((response, _)) => {
+                    last_error = Some(format!(
+                        "{}: code={}, remark={:?}",
+                        addr, response.code, response.remark
+                    ));
+                }
+                Err(e) => last_error = Some(format!("{}: {}", addr, e)),
+            }
+        }
+
+        if !succeeded {
+            return Err(last_error.unwrap_or_else(|| "No broker available".to_string()));
+        }
+
+        Ok(groups.into_iter().collect())
+    }
+
+    pub fn get_producer_connections(
+        &self,
+        group: &str,
+        topic: Option<&str>,
+    ) -> Result<Vec<ConnectionInfo>, String> {
+        let addrs: Vec<String> = match topic {
+            Some(topic) => match self.get_route_info_by_topic(topic) {
+                Ok(route) => route
+                    .broker_datas
+                    .iter()
+                    .filter_map(|broker| broker.broker_addrs.get(&0).cloned())
+                    .collect(),
+                // A topic without a route simply has no producer connections.
+                Err(e) if e.contains("code=17") => return Ok(Vec::new()),
+                Err(e) => return Err(e),
+            },
+            None => self.broker_master_addrs()?,
+        };
+
+        if addrs.is_empty() {
+            return Err("No broker available for the producer group".to_string());
+        }
+
+        let mut connections = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut responded = false;
+        let mut last_error = None;
+
+        for addr in addrs {
+            let mut ext = HashMap::new();
+            ext.insert("producerGroup".to_string(), group.to_string());
+            let command = RemotingCommand::new_request(GET_PRODUCER_CONNECTION_LIST, next_opaque())
+                .with_ext_fields(ext);
+
+            match self.send_command_to(&addr, &command) {
+                Ok((response, body)) if response.code == SUCCESS => {
+                    responded = true;
+                    match serde_json::from_slice::<ProducerConnection>(&body) {
+                        Ok(parsed) => {
+                            for connection in parsed.connection_set {
+                                let key = format!("{}|{}", connection.client_id, connection.client_addr);
+                                if seen.insert(key) {
+                                    connections.push(connection);
+                                }
+                            }
+                        }
+                        Err(e) => last_error = Some(format!("{}: {}", addr, e)),
+                    }
+                }
+                Ok((response, _)) => {
+                    responded = true;
+                    let remark = response.remark.clone().unwrap_or_default();
+                    // A broker without this producer group reports "not exist"/"not online".
+                    if !remark.contains("not exist") && !remark.contains("not online") {
+                        last_error = Some(format!(
+                            "{}: code={}, remark={:?}",
+                            addr, response.code, response.remark
+                        ));
+                    }
+                }
+                Err(e) => last_error = Some(format!("{}: {}", addr, e)),
+            }
+        }
+
+        if !responded {
+            return Err(last_error.unwrap_or_else(|| "No broker available".to_string()));
+        }
+
+        Ok(connections)
     }
 
     fn master_broker_addrs(&self) -> Result<Vec<String>, String> {

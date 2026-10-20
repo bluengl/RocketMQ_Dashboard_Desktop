@@ -33,6 +33,10 @@ pub const UPDATE_CONSUMER_OFFSET: i32 = 15;
 pub const GET_MAX_OFFSET: i32 = 30;
 pub const GET_MIN_OFFSET: i32 = 31;
 
+// Producer admin
+pub const GET_PRODUCER_CONNECTION_LIST: i32 = 204;
+pub const GET_ALL_PRODUCER_INFO: i32 = 328;
+
 // Message trace
 pub const DEFAULT_TRACE_TOPIC: &str = "RMQ_SYS_TRACE_TOPIC";
 // Trace contexts are separated by STX, their fields by SOH (RocketMQ TraceConstants)
@@ -250,6 +254,34 @@ pub struct ConsumerConnection {
     pub message_model: Option<String>,
     #[serde(default)]
     pub consume_from_where: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProducerConnection {
+    #[serde(default)]
+    pub connection_set: Vec<ConnectionInfo>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProducerTableInfo {
+    #[serde(default)]
+    pub data: HashMap<String, Vec<ProducerInfo>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProducerInfo {
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default)]
+    pub remote_ip: String,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub version: i32,
+    #[serde(default)]
+    pub last_update_timestamp: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

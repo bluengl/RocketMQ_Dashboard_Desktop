@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Activity, Database, List, MessageSquare, Users, Shield, GitBranch, Settings } from 'lucide-react'
+import { Activity, Database, List, MessageSquare, Users, Send, Shield, GitBranch, Settings } from 'lucide-react'
 import TopicsPage from './TopicsPage'
 import ConsumersPage from './ConsumersPage'
+import ProducerPage from './ProducerPage'
 import MessagePage from './MessagePage'
 import TracePage from './TracePage'
 import DashboardPage from './DashboardPage'
@@ -10,7 +11,7 @@ import ClusterPage from './ClusterPage'
 import AclPage from './AclPage'
 import './App.css'
 
-type Page = 'dashboard' | 'topics' | 'consumers' | 'messages' | 'cluster' | 'acl' | 'trace' | 'ops'
+type Page = 'dashboard' | 'topics' | 'consumers' | 'producers' | 'messages' | 'cluster' | 'acl' | 'trace' | 'ops'
 
 function App() {
   const [nameServer, setNameServer] = useState('192.168.153.149:9876')
@@ -59,6 +60,7 @@ function App() {
     { id: 'dashboard', icon: Activity, label: 'Dashboard' },
     { id: 'topics', icon: List, label: 'Topics' },
     { id: 'consumers', icon: Users, label: 'Consumers' },
+    { id: 'producers', icon: Send, label: 'Producers' },
     { id: 'messages', icon: MessageSquare, label: 'Messages' },
     { id: 'cluster', icon: Database, label: 'Cluster' },
     { id: 'acl', icon: Shield, label: 'ACL' },
@@ -195,6 +197,8 @@ function App() {
 
           {currentPage === 'consumers' && <ConsumersPage connected={connected} />}
 
+          {currentPage === 'producers' && <ProducerPage connected={connected} />}
+
           {currentPage === 'messages' && (
             <MessagePage
               connected={connected}
@@ -213,7 +217,7 @@ function App() {
 
           {currentPage === 'acl' && <AclPage connected={connected} />}
 
-          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'messages' && currentPage !== 'trace' && currentPage !== 'cluster' && currentPage !== 'acl' && (
+          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'producers' && currentPage !== 'messages' && currentPage !== 'trace' && currentPage !== 'cluster' && currentPage !== 'acl' && (
             <div className="text-center py-20 text-slate-400">
               <p className="text-lg">{currentPage.toUpperCase()} page - Coming soon</p>
             </div>

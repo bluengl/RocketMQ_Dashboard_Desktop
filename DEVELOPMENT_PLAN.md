@@ -10,8 +10,8 @@
 
 | 状态 | 内容 |
 |------|------|
-| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点、Message Trace（按 msgId/Key）、Cluster 运行时信息/拓扑、Dashboard TPS 趋势 |
-| ❌ 缺失 | Producer、ACL、OPS |
+| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点、Message Trace（按 msgId/Key）、Cluster 运行时信息/拓扑、Dashboard TPS 趋势、Producer 组/在线连接 |
+| ❌ 缺失 | OPS |
 
 **阶段 0–3 已修复的历史 bug**
 1. `consumer.rs` 曾读取托管 `State`（恒 `None`），与 `connect_cluster` 写入的 `GLOBAL_CLIENT` 不相通；已统一为 `GLOBAL_CLIENT`。
@@ -141,10 +141,25 @@
 
 ---
 
-## 阶段 5：Producer 查询（预计 1–2 天）
+## 阶段 5：Producer 查询（已完成，2026-10-20）
 
-- Producer 连接查询（RocketMQ 5.x 特有，**待核实请求码**）。
-- 前端 Producer 页面（按 Topic 查 producer 客户端）。
+> 请求码与报文已对照 RocketMQ 5.3.2 / 5.5.0 `RequestCode` 与 5.5.0 `MQClientAPIImpl` 核实，并在本机 5.3.2 Broker 实测。
+
+### 后端（已实现）
+- 生产者组枚举：`GET_ALL_PRODUCER_INFO`（328，发送到每个 master broker），聚合 `data` 的 key。
+- 在线连接：`GET_PRODUCER_CONNECTION_LIST`（204，extFields 为 `producerGroup`），聚合 `connectionSet` 并按 clientId + clientAddr 去重。
+- 可选 topic：给出 Topic 时先查路由，只向承载该 Topic 的 master broker 查询（与 Java dashboard 的 `examineProducerConnectionInfo(group, topic)` 语义一致）。
+- 组未注册时 Broker 返回 `the producer group[...] not exist`，按空列表处理。
+- 新命令：`get_producer_groups`、`get_producer_connections`。
+
+### 前端（`src/ProducerPage.tsx`）
+- 生产者组列表 + 搜索；选中后展示在线客户端（Client ID / 地址 / 语言 / 版本）。
+- 可选 Topic 输入，用于缩小查询的 Broker 范围。
+
+### 验证
+- 5.3.2 实测：328 返回 `{"data":{}}`；204 对不存在的组返回 code=1 `not exist`。
+- `cargo check`、`tsc --noEmit`、`npm run build` 通过；Vite 预览注入 stub 实测组列表、连接表与 Topic 过滤。
+- 测试集群无在线生产者，成功分支的连接列表未在真实环境观察。
 
 ---
 
@@ -226,7 +241,7 @@
 | GET_CONSUMER_CONNECTION_LIST | 203 | ✅ 已实测（返回 206 表示组未在线） |
 | GET_CONSUMER_RUNNING_INFO | 204 | ✅ 已确认（不是连接列表） |
 | Message Trace | 12（对 `RMQ_SYS_TRACE_TOPIC` 查询） | ✅ 已确认：无专用请求码，trace 消息的 KEYS 即原 msgId |
-| Producer 查询 | ? | ⚠️ 待核实 |
+| Producer 查询 | 204 / 328 | ✅ 已实测（组表 328；连接 204，extFields `producerGroup`） |
 | AUTH_CREATE_USER | 3001 | ✅ 已确认（5.3.2 实测可用） |
 | AUTH_UPDATE_USER | 3002 | ✅ 已确认 |
 | AUTH_DELETE_USER | 3003 | ✅ 已确认 |

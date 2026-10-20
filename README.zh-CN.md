@@ -36,10 +36,10 @@
 - **Consumer 管理** - 消费组、逐队列进度、在线实例、重置位点、消费 TPS
 - **消息查询** - Message ID / Key / Topic + 时间范围
 - **消息轨迹** - Pub / SubAfter / EndTransaction / Recall 时间轴（需开启 trace）
+- **Producer 查询** - 生产者组与在线连接
 - **ACL** - ACL 2.0 用户与规则 CRUD（需开启 ACL）
 
 ### 🚧 开发中
-- Producer 连接查询
 - OPS（Nameserver 管理 / 多集群切换）
 - 打包发布与打磨
 
@@ -54,7 +54,7 @@
 | Cluster | ✅ | 独立页面、运行时信息、拓扑 |
 | Topic | ✅ | 列表、路由、新建、删除（更新配置 ❌） |
 | Consumer | ✅ | 组列表、进度、在线实例、重置位点 |
-| Producer | ❌ | 生产者连接查询 |
+| Producer | ✅ | 生产者组与在线连接 |
 | Message | ✅ | 按 Topic/Key/ID/时间查询 |
 | Message Trace | ✅ | 需 Broker 开启 trace |
 | ACL | ✅ | 需 Broker 开启 ACL |

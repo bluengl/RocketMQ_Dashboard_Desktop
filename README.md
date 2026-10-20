@@ -65,13 +65,16 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 - ✅ 按 Message ID / Key / Topic + 时间范围查询消息
 - ✅ 消息轨迹（Pub / SubAfter / EndTransaction / Recall 时间轴，需 `traceTopicEnable=true`）
 
-#### 6. Dashboard / Cluster / ACL
+#### 6. Producer 查询
+- ✅ 生产者组枚举
+- ✅ 在线生产者连接（可按 Topic 缩小 Broker 范围）
+
+#### 7. Dashboard / Cluster / ACL
 - ✅ Broker 运行时指标、Produce/Consume TPS 趋势图、集群拓扑
 - ✅ ACL 2.0 用户与规则 CRUD（需 Broker 开启 ACL；连接栏可配置 Access Key / Secret Key）
 
 ### 开发中功能
 
-- 🚧 Producer 连接查询
 - 🚧 OPS（Nameserver 管理、多集群切换）
 - 🚧 打包发布与打磨（分页 / 虚拟滚动 / 错误分类）
 
@@ -93,7 +96,7 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 | Consumer | 消费组列表 | ✅ 已实现 |
 | Consumer | 消费进度 / 在线实例 | ✅ 已实现 |
 | Consumer | 重置消费位点 | ✅ 已实现 |
-| Producer | 生产者连接查询（RocketMQ 5.x） | ❌ 未实现 |
+| Producer | 生产者连接查询（RocketMQ 5.x） | ✅ 已实现 |
 | Message | 按 Topic / Key / 时间范围查询消息 | ✅ 已实现 |
 | Message | 按 Message ID 查询消息详情 | ✅ 已实现 |
 | Message Trace | 消息轨迹查询 | ✅ 已实现（需 Broker 开启 trace） |

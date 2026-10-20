@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Users and rules are read from and applied to every master broker, with per-broker errors surfaced in the UI
   - Optional ACL credentials on the connection bar; requests are signed with `AccessKey` + `Signature` (HMAC-SHA1 over sorted ext fields and body)
   - New ACL page with Users and ACL Rules tabs (actions: Pub/Sub/Any/Create/Update/Delete/Get/List/All; decisions: Allow/Deny)
+- **Producer query (phase 5)**
+  - Producer groups via `GET_ALL_PRODUCER_INFO` (328) aggregated across master brokers
+  - Online producer clients via `GET_PRODUCER_CONNECTION_LIST` (204), optionally scoped to brokers hosting a topic
+  - New Producers page with group search and connection table
 - **Cluster + Dashboard (phase 4)**
   - Broker runtime info via `GET_BROKER_RUNTIME_INFO` (28), parsed from the `table` payload
   - Dashboard KPIs (brokers / topics / consumer groups / produce TPS / consume TPS) with a 5s polling loop

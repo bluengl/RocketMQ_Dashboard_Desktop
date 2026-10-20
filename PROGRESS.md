@@ -1,6 +1,6 @@
 # RocketMQ Dashboard 桌面版 - 开发进度
 
-> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 4 Cluster + Dashboard（运行时信息/拓扑/TPS 趋势）、阶段 6 Message Trace、阶段 7 ACL（用户/规则 CRUD + 请求签名）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 4 Cluster + Dashboard（运行时信息/拓扑/TPS 趋势）、阶段 5 Producer 查询、阶段 6 Message Trace、阶段 7 ACL（用户/规则 CRUD + 请求签名）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ## 项目概述
 基于 Tauri 2 + React 18 + TypeScript 的 RocketMQ 管理控制台桌面应用
@@ -148,6 +148,18 @@
 - trace topic 无路由或查询为空时返回空轨迹，不报错
 - 单测覆盖 trace body 解析与 msgId 过滤
 
+### ✅ 12. Producer 查询（100%）
+- [x] 生产者组枚举（`GET_ALL_PRODUCER_INFO` 328）
+- [x] 在线生产者连接（`GET_PRODUCER_CONNECTION_LIST` 204）
+- [x] 可选 Topic 限定查询的 Broker 范围
+- [x] 前端 Producer 页面（组列表/搜索、连接表）
+
+**实现要点**:
+- 328 发送到每个 master broker，聚合 `data` 的 key 作为生产者组
+- 204 的 extFields 为 `producerGroup`，响应 `connectionSet` 按 clientId + clientAddr 去重
+- 组未注册时 Broker 返回 `not exist`，按空列表处理
+- 测试集群无在线生产者，成功分支需在有生产者的环境复验
+
 ## 项目结构
 
 ```
@@ -212,13 +224,10 @@ rocketmqMg/
 
 ## 下一步计划
 
-1. **Producer 查询** (阶段 5)
-   - 需先核实 RocketMQ 5.x Producer 查询请求码
-
-2. **ACL 权限管理** (阶段 7)
+1. **ACL 权限管理** (阶段 7)
    - 需先核实 ACL 相关请求码
 
-3. **OPS + 多集群 + 打包** (阶段 8)
+2. **OPS + 多集群 + 打包** (阶段 8)
    - 多集群切换、大数据量分页、错误分类、打包发布
 
 ## 已知问题

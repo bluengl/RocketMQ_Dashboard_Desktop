@@ -35,6 +35,8 @@ fn main() {
             commands::create_acl_rule,
             commands::update_acl_rule,
             commands::delete_acl_rule,
+            commands::get_producer_groups,
+            commands::get_producer_connections,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

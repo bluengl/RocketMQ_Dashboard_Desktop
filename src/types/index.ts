@@ -81,6 +81,13 @@ export interface ConsumerProgress {
   lag: number
 }
 
+export interface ProducerConnectionInfo {
+  clientId: string
+  clientAddr: string
+  language: string
+  version: number
+}
+
 export interface TraceNode {
   title: string
   timestamp: number
