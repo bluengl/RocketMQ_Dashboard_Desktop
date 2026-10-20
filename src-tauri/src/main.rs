@@ -16,6 +16,7 @@ fn main() {
             commands::get_consumer_connections,
             commands::query_message_by_id,
             commands::query_message_by_key,
+            commands::query_message_by_time,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

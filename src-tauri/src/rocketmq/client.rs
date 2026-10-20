@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use super::protocol::{
     RemotingCommand, ClusterInfoResponse, TopicListResponse, TopicRouteData, MessageExt,
     GET_BROKER_CLUSTER_INFO, GET_ALL_TOPIC_LIST_FROM_NAMESERVER, GET_ROUTEINFO_BY_TOPIC,
-    QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SUCCESS,
+    QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SEARCH_OFFSET_BY_TIMESTAMP, SUCCESS,
 };
 
 static OPAQUE_COUNTER: AtomicI32 = AtomicI32::new(1);
@@ -257,6 +257,75 @@ impl RocketMQClient {
         }
 
         parse_messages(&body)
+    }
+
+    fn search_offset(&self, addr: &str, topic: &str, queue_id: i32, timestamp: i64) -> Result<i64, String> {
+        let mut ext = HashMap::new();
+        ext.insert("topic".to_string(), topic.to_string());
+        ext.insert("queueId".to_string(), queue_id.to_string());
+        ext.insert("timestamp".to_string(), timestamp.to_string());
+        let command = RemotingCommand::new_request(SEARCH_OFFSET_BY_TIMESTAMP, next_opaque()).with_ext_fields(ext);
+        let (response, _) = self.send_command_to(addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Search offset failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        response
+            .ext_fields
+            .as_ref()
+            .and_then(|f| f.get("offset"))
+            .and_then(|s| s.parse::<i64>().ok())
+            .ok_or_else(|| "No offset in search response".to_string())
+    }
+
+    pub fn query_message_by_time(&self, topic: &str, begin_ts: i64, end_ts: i64) -> Result<Vec<MessageExt>, String> {
+        let broker_addr = self.broker_addr_for_topic(topic)?;
+        let route = self.get_route_info_by_topic(topic)?;
+        let read_queue_nums = route.queue_datas.first().map(|q| q.read_queue_nums).unwrap_or(4) as i32;
+        let mut all = Vec::new();
+
+        for queue_id in 0..read_queue_nums {
+            let begin_offset = match self.search_offset(&broker_addr, topic, queue_id, begin_ts) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let end_offset = match self.search_offset(&broker_addr, topic, queue_id, end_ts) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if begin_offset < 0 || end_offset < begin_offset {
+                continue;
+            }
+            let max_num = (end_offset - begin_offset + 1).min(32);
+            if max_num <= 0 {
+                continue;
+            }
+
+            let mut ext = HashMap::new();
+            ext.insert("topic".to_string(), topic.to_string());
+            ext.insert("queueId".to_string(), queue_id.to_string());
+            ext.insert("offset".to_string(), begin_offset.to_string());
+            ext.insert("maxNum".to_string(), max_num.to_string());
+            ext.insert("beginTimestamp".to_string(), begin_ts.to_string());
+            ext.insert("endTimestamp".to_string(), end_ts.to_string());
+            let command = RemotingCommand::new_request(QUERY_MESSAGE, next_opaque()).with_ext_fields(ext);
+            let (response, body) = match self.send_command_to(&broker_addr, &command) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if response.code != SUCCESS {
+                continue;
+            }
+            if let Ok(mut msgs) = parse_messages(&body) {
+                all.append(&mut msgs);
+            }
+        }
+
+        Ok(all)
     }
 }
 

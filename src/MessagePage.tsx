@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { MessageSquare, Search, RefreshCw, KeyRound } from 'lucide-react'
+import { MessageSquare, Search, RefreshCw, KeyRound, Clock } from 'lucide-react'
 import type { MessageInfo } from './types'
 
 interface MessagePageProps {
@@ -26,6 +26,9 @@ export default function MessagePage({ connected }: MessagePageProps) {
   const [msgId, setMsgId] = useState('')
   const [topic, setTopic] = useState('')
   const [key, setKey] = useState('')
+  const [beginTime, setBeginTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const [timeTopic, setTimeTopic] = useState('')
   const [messages, setMessages] = useState<MessageInfo[]>([])
   const [selected, setSelected] = useState<MessageInfo | null>(null)
   const [loading, setLoading] = useState(false)
@@ -64,6 +67,25 @@ export default function MessagePage({ connected }: MessagePageProps) {
     }
   }
 
+  const searchByTime = async () => {
+    if (!timeTopic.trim() || !beginTime || !endTime) return
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await invoke<MessageInfo[]>('query_message_by_time', {
+        topic: timeTopic.trim(),
+        beginTs: new Date(beginTime).getTime(),
+        endTs: new Date(endTime).getTime(),
+      })
+      setMessages(result)
+      setSelected(result[0] ?? null)
+    } catch (err) {
+      setError(err as string)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -77,7 +99,7 @@ export default function MessagePage({ connected }: MessagePageProps) {
       </div>
 
       {/* Query forms */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-2 text-slate-300 font-medium">
             <Search className="w-4 h-4 text-cyan-400" />
@@ -122,6 +144,39 @@ export default function MessagePage({ connected }: MessagePageProps) {
             onClick={searchByKey}
             disabled={!connected || loading || !topic.trim() || !key.trim()}
             className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-400 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Search
+          </button>
+        </div>
+
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2 text-slate-300 font-medium">
+            <Clock className="w-4 h-4 text-green-400" />
+            Query by Time Range
+          </div>
+          <input
+            type="text"
+            value={timeTopic}
+            onChange={(e) => setTimeTopic(e.target.value)}
+            placeholder="Topic"
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+          />
+          <input
+            type="datetime-local"
+            value={beginTime}
+            onChange={(e) => setBeginTime(e.target.value)}
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
+          />
+          <input
+            type="datetime-local"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
+          />
+          <button
+            onClick={searchByTime}
+            disabled={!connected || loading || !timeTopic.trim() || !beginTime || !endTime}
+            className="w-full px-4 py-2 bg-green-500 hover:bg-green-400 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Search
           </button>

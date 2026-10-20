@@ -7,6 +7,7 @@ pub const GET_ALL_TOPIC_LIST_FROM_NAMESERVER: i32 = 206;
 pub const GET_ROUTEINFO_BY_TOPIC: i32 = 105;
 pub const QUERY_MESSAGE: i32 = 12;
 pub const VIEW_MESSAGE_BY_ID: i32 = 33;
+pub const SEARCH_OFFSET_BY_TIMESTAMP: i32 = 29;
 
 // Response Codes
 pub const SUCCESS: i32 = 0;
