@@ -20,8 +20,17 @@ pub const UPDATE_CONSUMER_OFFSET: i32 = 15;
 pub const GET_MAX_OFFSET: i32 = 30;
 pub const GET_MIN_OFFSET: i32 = 31;
 
+// Message trace
+pub const DEFAULT_TRACE_TOPIC: &str = "RMQ_SYS_TRACE_TOPIC";
+// Trace contexts are separated by STX, their fields by SOH (RocketMQ TraceConstants)
+pub const TRACE_FIELD_SPLITOR: char = '\u{0002}';
+pub const TRACE_CONTENT_SPLITOR: char = '\u{0001}';
+
 // Response Codes
 pub const SUCCESS: i32 = 0;
+pub const TOPIC_NOT_EXIST: i32 = 17;
+pub const QUERY_NOT_FOUND: i32 = 22;
+pub const NO_MESSAGE: i32 = 204;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemotingCommand {
@@ -225,4 +234,32 @@ pub struct ConsumerConnection {
     pub message_model: Option<String>,
     #[serde(default)]
     pub consume_from_where: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceNode {
+    pub title: String,
+    pub timestamp: i64,
+    pub status: String,
+    pub cost_time: i64,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerStatus {
+    pub group: String,
+    pub delivery_status: String,
+    pub consume_time: i64,
+    pub retry_count: i32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceRecord {
+    #[serde(default)]
+    pub nodes: Vec<TraceNode>,
+    #[serde(default)]
+    pub consumer_status: Vec<ConsumerStatus>,
 }

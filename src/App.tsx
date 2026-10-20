@@ -4,6 +4,7 @@ import { Activity, Database, List, MessageSquare, Users, Shield, GitBranch, Sett
 import TopicsPage from './TopicsPage'
 import ConsumersPage from './ConsumersPage'
 import MessagePage from './MessagePage'
+import TracePage from './TracePage'
 import type { ClusterInfo } from './types'
 import './App.css'
 
@@ -16,6 +17,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [clusterInfo, setClusterInfo] = useState<ClusterInfo | null>(null)
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
+  const [traceTarget, setTraceTarget] = useState<string | null>(null)
 
   const handleConnect = async () => {
     setConnecting(true)
@@ -277,9 +279,21 @@ function App() {
 
           {currentPage === 'consumers' && <ConsumersPage connected={connected} />}
 
-          {currentPage === 'messages' && <MessagePage connected={connected} />}
+          {currentPage === 'messages' && (
+            <MessagePage
+              connected={connected}
+              onViewTrace={(msgId) => {
+                setTraceTarget(msgId)
+                setCurrentPage('trace')
+              }}
+            />
+          )}
 
-          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'messages' && (
+          {currentPage === 'trace' && (
+            <TracePage connected={connected} initialMsgId={traceTarget} />
+          )}
+
+          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'messages' && currentPage !== 'trace' && (
             <div className="text-center py-20 text-slate-400">
               <p className="text-lg">{currentPage.toUpperCase()} page - Coming soon</p>
             </div>

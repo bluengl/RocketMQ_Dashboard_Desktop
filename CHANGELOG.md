@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Message trace (phase 6)**
+  - Trace lookup by message ID and by business key
+  - Queries `RMQ_SYS_TRACE_TOPIC` via `QUERY_MESSAGE` (12), with an optional custom trace topic
+  - Timeline of produce / consume / endTransaction / recall nodes plus consumer delivery status
+  - "View Trace" entry point from the message detail panel
 - **Consumer management (phase 3)**
   - Consumer group enumeration via `GET_ALL_SUBSCRIPTIONGROUP_CONFIG` (201)
   - Online connections list with client id, address, language and version
@@ -21,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 - Real-time monitoring dashboard (TPS / Message lag / Cluster health)
-- Producer query, message trace, ACL permission management
+- Producer query, ACL permission management
 
 ## [0.3.0-alpha] - 2026-10-20
 

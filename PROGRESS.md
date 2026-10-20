@@ -1,6 +1,6 @@
 # RocketMQ Dashboard 桌面版 - 开发进度
 
-> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 6 Message Trace 已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ## 项目概述
 基于 Tauri 2 + React 18 + TypeScript 的 RocketMQ 管理控制台桌面应用
@@ -117,9 +117,18 @@
 - [ ] 权限配置
 - [ ] 白名单管理
 
-### 📋 11. 消息轨迹（0%）
-- [ ] 轨迹查询
-- [ ] 链路展示
+### ✅ 11. 消息轨迹（100%）
+- [x] 按 Message ID 查询轨迹
+- [x] 按 Key 查询轨迹
+- [x] 自定义 trace topic（默认 `RMQ_SYS_TRACE_TOPIC`）
+- [x] 链路时间轴（produce / consume / endTransaction / recall）
+- [x] 消费状态列表
+
+**实现要点**:
+- 轨迹数据作为普通消息写入 `RMQ_SYS_TRACE_TOPIC`，KEYS 即原消息 msgId
+- 查询走 `QUERY_MESSAGE` (12)，以 msgId / key 检索，无需专用请求码
+- trace topic 无路由或查询为空时返回空轨迹，不报错
+- 单测覆盖 trace body 解析与 msgId 过滤
 
 ## 项目结构
 
@@ -192,13 +201,10 @@ rocketmqMg/
 2. **Producer 查询** (阶段 5)
    - 需先核实 RocketMQ 5.x Producer 查询请求码
 
-3. **Message Trace** (阶段 6)
-   - 需先核实轨迹查询请求码
-
-4. **ACL 权限管理** (阶段 7)
+3. **ACL 权限管理** (阶段 7)
    - 需先核实 ACL 相关请求码
 
-5. **OPS + 多集群 + 打包** (阶段 8)
+4. **OPS + 多集群 + 打包** (阶段 8)
    - 多集群切换、大数据量分页、错误分类、打包发布
 
 ## 已知问题
@@ -206,6 +212,7 @@ rocketmqMg/
 1. 当前未实现 ACL 认证（NameServer 未启用 ACL 时可正常使用）
 2. 消费者组查询协议可能需要连接 Broker（当前仅连接 NameServer）
 3. 某些统计数据需要从多个 Broker 聚合
+4. 测试集群（192.168.153.149:9876）未启用消息轨迹（无 `RMQ_SYS_TRACE_TOPIC` 路由），trace 端到端需在 `traceTopicEnable=true` 的 Broker 上复验
 
 ## 测试方法
 

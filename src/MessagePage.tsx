@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { MessageSquare, Search, RefreshCw, KeyRound, Clock } from 'lucide-react'
+import { MessageSquare, Search, RefreshCw, KeyRound, Clock, GitBranch } from 'lucide-react'
 import type { MessageInfo } from './types'
 
 interface MessagePageProps {
   connected: boolean
+  onViewTrace?: (msgId: string) => void
 }
 
 function decodeBody(body?: string): string {
@@ -22,7 +23,7 @@ function formatTimestamp(ts?: number): string {
   return new Date(ts).toLocaleString('zh-CN')
 }
 
-export default function MessagePage({ connected }: MessagePageProps) {
+export default function MessagePage({ connected, onViewTrace }: MessagePageProps) {
   const [msgId, setMsgId] = useState('')
   const [topic, setTopic] = useState('')
   const [key, setKey] = useState('')
@@ -227,7 +228,18 @@ export default function MessagePage({ connected }: MessagePageProps) {
           <div className="col-span-2 bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
             {selected ? (
               <>
-                <h3 className="font-medium text-slate-200">Message Detail</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium text-slate-200">Message Detail</h3>
+                  {onViewTrace && selected.msgId && (
+                    <button
+                      onClick={() => onViewTrace(selected.msgId!)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm rounded-lg transition-colors"
+                    >
+                      <GitBranch className="w-4 h-4 text-cyan-400" />
+                      View Trace
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                   <Detail label="Topic" value={selected.topic} />
                   <Detail label="Msg ID" value={selected.msgId} mono />

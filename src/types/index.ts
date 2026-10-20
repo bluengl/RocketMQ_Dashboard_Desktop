@@ -80,3 +80,23 @@ export interface ConsumerProgress {
   consumerOffset: number
   lag: number
 }
+
+export interface TraceNode {
+  title: string
+  timestamp: number
+  status: 'finish' | 'failed' | string
+  costTime: number
+  description: string
+}
+
+export interface ConsumerStatus {
+  group: string
+  deliveryStatus: 'success' | 'failed' | 'pending' | string
+  consumeTime: number
+  retryCount: number
+}
+
+export interface TraceRecord {
+  nodes: TraceNode[]
+  consumerStatus: ConsumerStatus[]
+}

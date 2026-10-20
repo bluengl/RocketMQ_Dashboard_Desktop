@@ -2,20 +2,28 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicI32, Ordering};
+
+use base64::{engine::general_purpose, Engine as _};
 
 use super::protocol::{
     RemotingCommand, ClusterInfoResponse, TopicListResponse, TopicRouteData, MessageExt,
-    SubscriptionGroupListResponse, ConsumerConnection,
+    SubscriptionGroupListResponse, ConsumerConnection, TraceNode, ConsumerStatus, TraceRecord,
     GET_BROKER_CLUSTER_INFO, GET_ALL_TOPIC_LIST_FROM_NAMESERVER, GET_ROUTEINFO_BY_TOPIC,
     QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SEARCH_OFFSET_BY_TIMESTAMP, UPDATE_AND_CREATE_TOPIC,
     DELETE_TOPIC_IN_NAMESRV, DELETE_TOPIC_IN_BROKER, SUCCESS,
     GET_ALL_SUBSCRIPTIONGROUP_CONFIG, GET_CONSUMER_CONNECTION_LIST, QUERY_CONSUMER_OFFSET,
     UPDATE_CONSUMER_OFFSET, GET_MAX_OFFSET, GET_MIN_OFFSET,
+    DEFAULT_TRACE_TOPIC, TRACE_CONTENT_SPLITOR, TRACE_FIELD_SPLITOR,
+    TOPIC_NOT_EXIST, QUERY_NOT_FOUND, NO_MESSAGE,
 };
 
 static OPAQUE_COUNTER: AtomicI32 = AtomicI32::new(1);
+
+const TRACE_QUERY_MAX: i32 = 64;
+const ONE_HOUR_MILLIS: i64 = 3_600_000;
+const ONE_DAY_MILLIS: i64 = 86_400_000;
 
 fn next_opaque() -> i32 {
     OPAQUE_COUNTER.fetch_add(1, Ordering::SeqCst)
@@ -341,6 +349,139 @@ impl RocketMQClient {
         }
 
         Ok(all)
+    }
+
+    /// Trace lookup by message id: queries the trace topic by key (the broker stores the
+    /// original msgId as the trace message's key), then parses the trace contexts.
+    pub fn query_message_trace(
+        &self,
+        msg_id: &str,
+        trace_topic: Option<&str>,
+    ) -> Result<TraceRecord, String> {
+        let trace_topic = trace_topic
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_TRACE_TOPIC);
+        let now = now_millis();
+        let (begin, end) = match self.resolve_store_timestamp(msg_id) {
+            // Derive the window from the original message so traces older than the fallback
+            // window are still found (trace data is retained 72h by default).
+            Some(store_ts) => (
+                store_ts - 5 * 60_000,
+                (store_ts + ONE_DAY_MILLIS).max(now + 60_000),
+            ),
+            None => (now - ONE_HOUR_MILLIS, now + 60_000),
+        };
+        self.query_trace_messages(trace_topic, msg_id, begin, end, Some(msg_id))
+    }
+
+    /// Trace lookup by business key. The trace query itself is scoped by key, so no
+    /// per-context msgId filtering is applied.
+    pub fn query_message_trace_by_key(
+        &self,
+        key: &str,
+        trace_topic: Option<&str>,
+    ) -> Result<TraceRecord, String> {
+        let trace_topic = trace_topic
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_TRACE_TOPIC);
+        let now = now_millis();
+        self.query_trace_messages(
+            trace_topic,
+            key,
+            now - ONE_DAY_MILLIS,
+            now + 60_000,
+            None,
+        )
+    }
+
+    fn query_trace_messages(
+        &self,
+        trace_topic: &str,
+        query_key: &str,
+        begin: i64,
+        end: i64,
+        filter_msg_id: Option<&str>,
+    ) -> Result<TraceRecord, String> {
+        // No route means the cluster never dispatched to the trace topic: no trace data.
+        let broker_addrs: Vec<String> = match self.get_route_info_by_topic(trace_topic) {
+            Ok(route) => route
+                .broker_datas
+                .iter()
+                .filter_map(|b| b.broker_addrs.get(&0).cloned())
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        if broker_addrs.is_empty() {
+            return Ok(TraceRecord::default());
+        }
+
+        // The trace topic may live on several brokers; aggregate their results like
+        // DefaultMQAdminExt.queryMessage does.
+        let mut record = TraceRecord::default();
+        let mut succeeded = false;
+        let mut last_error = None;
+
+        for broker_addr in broker_addrs {
+            let mut ext = HashMap::new();
+            ext.insert("topic".to_string(), trace_topic.to_string());
+            ext.insert("key".to_string(), query_key.to_string());
+            ext.insert("maxNum".to_string(), TRACE_QUERY_MAX.to_string());
+            ext.insert("beginTimestamp".to_string(), begin.to_string());
+            ext.insert("endTimestamp".to_string(), end.to_string());
+            let command =
+                RemotingCommand::new_request(QUERY_MESSAGE, next_opaque()).with_ext_fields(ext);
+            let (response, body) = match self.send_command_to(&broker_addr, &command) {
+                Ok(result) => result,
+                Err(e) => {
+                    last_error = Some(format!("{}: {}", broker_addr, e));
+                    continue;
+                }
+            };
+
+            if response.code != SUCCESS {
+                if matches!(
+                    response.code,
+                    TOPIC_NOT_EXIST | QUERY_NOT_FOUND | NO_MESSAGE
+                ) {
+                    // This broker holds no trace data for the query.
+                    succeeded = true;
+                    continue;
+                }
+                last_error = Some(format!(
+                    "{}: code={}, remark={:?}",
+                    broker_addr, response.code, response.remark
+                ));
+                continue;
+            }
+
+            match parse_messages(&body) {
+                Ok(messages) => {
+                    for message in messages {
+                        if let Some(encoded_body) = message.body.as_deref() {
+                            parse_trace_body(encoded_body, filter_msg_id, &mut record);
+                        }
+                    }
+                    succeeded = true;
+                }
+                Err(e) => last_error = Some(format!("{}: {}", broker_addr, e)),
+            }
+        }
+
+        if !succeeded {
+            return Err(last_error
+                .unwrap_or_else(|| "No broker available for trace topic".to_string()));
+        }
+
+        Ok(record)
+    }
+
+    fn resolve_store_timestamp(&self, msg_id: &str) -> Option<i64> {
+        self.query_message_by_id(msg_id)
+            .ok()?
+            .first()
+            .and_then(|m| m.store_timestamp)
     }
 
     pub fn create_topic(
@@ -690,6 +831,118 @@ impl RocketMQClient {
     }
 }
 
+/// Parse one trace message body. Contexts are separated by STX and fields by SOH.
+/// The first field of each context is the trace type; layouts follow RocketMQ 5.x
+/// TraceDataEncoder (the msgId column is 5, except 2 for SubAfter).
+fn parse_trace_body(encoded_body: &str, target_msg_id: Option<&str>, record: &mut TraceRecord) {
+    let bytes = decode_body(encoded_body);
+    let data = String::from_utf8_lossy(&bytes);
+    for context in data.split(TRACE_FIELD_SPLITOR) {
+        if context.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = context.split(TRACE_CONTENT_SPLITOR).collect();
+        let trace_type = fields[0].trim();
+        let msg_id_index = if trace_type == "SubAfter" { 2 } else { 5 };
+        if let Some(target) = target_msg_id {
+            if trace_field(&fields, msg_id_index) != target {
+                continue;
+            }
+        }
+
+        match trace_type {
+            "Pub" => record.nodes.push(TraceNode {
+                title: "produce".to_string(),
+                timestamp: trace_long(&fields, 1),
+                status: trace_status(trace_bool(&fields, 13)),
+                cost_time: trace_long(&fields, 10),
+                description: format!(
+                    "producer={}, storeHost={}",
+                    trace_field(&fields, 3),
+                    trace_field(&fields, 8)
+                ),
+            }),
+            "SubAfter" => {
+                record.nodes.push(TraceNode {
+                    title: "consume".to_string(),
+                    timestamp: trace_long(&fields, 7),
+                    status: trace_status(trace_bool(&fields, 4)),
+                    cost_time: trace_long(&fields, 3),
+                    description: format!(
+                        "group={}, contextCode={}",
+                        trace_field(&fields, 8),
+                        trace_field(&fields, 6)
+                    ),
+                });
+                record.consumer_status.push(ConsumerStatus {
+                    group: trace_field(&fields, 8).to_string(),
+                    delivery_status: if trace_bool(&fields, 4) {
+                        "success"
+                    } else {
+                        "failed"
+                    }
+                    .to_string(),
+                    consume_time: trace_long(&fields, 7),
+                    retry_count: 0,
+                });
+            }
+            "EndTransaction" => record.nodes.push(TraceNode {
+                title: "endTransaction".to_string(),
+                timestamp: trace_long(&fields, 1),
+                status: "finish".to_string(),
+                cost_time: 0,
+                description: format!(
+                    "group={}, transactionState={}",
+                    trace_field(&fields, 3),
+                    trace_field(&fields, 11)
+                ),
+            }),
+            "Recall" => record.nodes.push(TraceNode {
+                title: "recall".to_string(),
+                timestamp: trace_long(&fields, 1),
+                status: trace_status(trace_bool(&fields, 6)),
+                cost_time: 0,
+                description: format!(
+                    "group={}, topic={}",
+                    trace_field(&fields, 3),
+                    trace_field(&fields, 4)
+                ),
+            }),
+            _ => {}
+        }
+    }
+}
+
+fn trace_field<'a>(fields: &[&'a str], index: usize) -> &'a str {
+    fields.get(index).copied().unwrap_or("")
+}
+
+fn trace_long(fields: &[&str], index: usize) -> i64 {
+    trace_field(fields, index).parse().unwrap_or(0)
+}
+
+fn trace_bool(fields: &[&str], index: usize) -> bool {
+    trace_field(fields, index).eq_ignore_ascii_case("true")
+}
+
+fn trace_status(success: bool) -> String {
+    if success { "finish" } else { "failed" }.to_string()
+}
+
+fn decode_body(encoded: &str) -> Vec<u8> {
+    general_purpose::STANDARD
+        .decode(encoded)
+        .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(encoded))
+        .unwrap_or_else(|_| encoded.as_bytes().to_vec())
+}
+
+fn now_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 fn parse_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {
     if body.is_empty() {
         return Ok(Vec::new());
@@ -755,4 +1008,66 @@ fn parse_json_normalized<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<
         .map_err(|e| format!("Invalid UTF-8 response: {}", e))?;
     let normalized = normalize_json_keys(&s);
     serde_json::from_str::<T>(&normalized).map_err(|e| format!("Parse JSON failed: {}", e))
+}
+
+#[cfg(test)]
+mod smoke {
+    use super::*;
+
+    #[test]
+    fn parses_trace_contexts() {
+        let msg_id = "AC14000A00002A9F0000000000000001";
+        let pub_ctx = [
+            "Pub",
+            "1700000000000",
+            "DefaultRegion",
+            "producer_group",
+            "TestTopic",
+            msg_id,
+            "tagA",
+            "keyA",
+            "10.0.0.1:10911",
+            "100",
+            "12",
+            "NORMAL",
+            "10.0.0.1:10911",
+            "true",
+        ]
+        .join(&TRACE_CONTENT_SPLITOR.to_string());
+        let sub_ctx = [
+            "SubAfter",
+            "req-1",
+            msg_id,
+            "8",
+            "true",
+            "keyA",
+            "0",
+            "1700000000500",
+            "consumer_group",
+        ]
+        .join(&TRACE_CONTENT_SPLITOR.to_string());
+        let raw = format!("{}{}{}", pub_ctx, TRACE_FIELD_SPLITOR, sub_ctx);
+        let encoded = general_purpose::STANDARD.encode(raw.as_bytes());
+
+        let mut record = TraceRecord::default();
+        parse_trace_body(&encoded, Some(msg_id), &mut record);
+
+        assert_eq!(record.nodes.len(), 2);
+        assert_eq!(record.nodes[0].title, "produce");
+        assert_eq!(record.nodes[0].status, "finish");
+        assert_eq!(record.nodes[0].cost_time, 12);
+        assert_eq!(record.nodes[0].description, "producer=producer_group, storeHost=10.0.0.1:10911");
+        assert_eq!(record.nodes[1].title, "consume");
+        assert_eq!(record.nodes[1].timestamp, 1700000000500);
+        assert_eq!(record.nodes[1].description, "group=consumer_group, contextCode=0");
+
+        assert_eq!(record.consumer_status.len(), 1);
+        assert_eq!(record.consumer_status[0].group, "consumer_group");
+        assert_eq!(record.consumer_status[0].delivery_status, "success");
+
+        let mut filtered = TraceRecord::default();
+        parse_trace_body(&encoded, Some("OTHER"), &mut filtered);
+        assert!(filtered.nodes.is_empty());
+        assert!(filtered.consumer_status.is_empty());
+    }
 }

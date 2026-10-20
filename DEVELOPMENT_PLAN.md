@@ -10,8 +10,8 @@
 
 | 状态 | 内容 |
 |------|------|
-| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点 |
-| ❌ 缺失 | Message Trace、Producer、ACL、OPS；Dashboard/Cluster 的统计与拓扑 |
+| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点、Message Trace（按 msgId/Key） |
+| ❌ 缺失 | Producer、ACL、OPS；Dashboard/Cluster 的统计与拓扑 |
 
 **阶段 0–3 已修复的历史 bug**
 1. `consumer.rs` 曾读取托管 `State`（恒 `None`），与 `connect_cluster` 写入的 `GLOBAL_CLIENT` 不相通；已统一为 `GLOBAL_CLIENT`。
@@ -133,10 +133,20 @@
 
 ---
 
-## 阶段 6：Message Trace（预计 1–2 天）
+## 阶段 6：Message Trace（已完成）
 
-- 消息轨迹查询（`QUERY_MESSAGE_TRACE_BY_ID`，**待核实请求码**）。
-- 轨迹链路展示（生产 / 存储 / 消费全链路）。
+**结论（核实自 rocketmq-dashboard 源码）**：不存在专用的 `QUERY_MESSAGE_TRACE_BY_ID` 请求码。轨迹数据以普通消息写入 `RMQ_SYS_TRACE_TOPIC`，其 KEYS 即原消息 msgId；查询就是对 trace topic 走 `QUERY_MESSAGE`（12），以 msgId/Key 为 key。
+
+### 已实现
+- 后端 `query_message_trace(msgId, traceTopic?)` / `query_message_trace_by_key(key, traceTopic?)`。
+- 查询窗口：按原消息的 storeTimestamp 推导（±，最长 1 天）；取不到时回退到最近 1 小时（按 msgId）/ 24 小时（按 key）。
+- trace topic 无路由、`TOPIC_NOT_EXIST`(17)、`QUERY_NOT_FOUND`(22)、`NO_MESSAGE`(204) 均返回空轨迹而非报错。
+- 解析 trace body（STX 分隔 context、SOH 分隔字段），支持 `Pub` / `SubAfter` / `EndTransaction` / `Recall`，按 msgId 过滤（SubAfter 的 msgId 在第 3 列，其余在第 6 列）。
+- 前端 `src/TracePage.tsx`：msgId/Key 双模式查询、自定义 trace topic、时间轴链路、消费状态列表；消息详情页提供 “View Trace” 入口。
+- 单测覆盖 trace 解析与 msgId 过滤。
+
+### 验收说明
+- 测试集群（192.168.153.149:9876）未启用 trace（无 `RMQ_SYS_TRACE_TOPIC` 路由），端到端轨迹需在 `traceTopicEnable=true` 的 Broker 上复验。
 
 ---
 
@@ -180,7 +190,7 @@
 | GET_ALL_SUBSCRIPTIONGROUP_CONFIG | 201 | ✅ 已实测（消费组枚举入口，发送到 Broker） |
 | GET_CONSUMER_CONNECTION_LIST | 203 | ✅ 已实测（返回 206 表示组未在线） |
 | GET_CONSUMER_RUNNING_INFO | 204 | ✅ 已确认（不是连接列表） |
-| QUERY_MESSAGE_TRACE_BY_ID | ? | ⚠️ 待核实 |
+| Message Trace | 12（对 `RMQ_SYS_TRACE_TOPIC` 查询） | ✅ 已确认：无专用请求码，trace 消息的 KEYS 即原 msgId |
 | Producer 查询 | ? | ⚠️ 待核实 |
 | ACL 相关 | ? | ⚠️ 待核实 |
 
