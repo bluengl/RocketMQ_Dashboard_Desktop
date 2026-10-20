@@ -1,6 +1,6 @@
 # RocketMQ Dashboard 桌面版 - 开发进度
 
-> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询（按 Message ID / Key / 时间范围）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理（路由查看/新建/删除）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ## 项目概述
 基于 Tauri 2 + React 18 + TypeScript 的 RocketMQ 管理控制台桌面应用
