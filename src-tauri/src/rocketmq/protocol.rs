@@ -115,7 +115,7 @@ pub struct BrokerData {
     #[serde(rename = "brokerName")]
     pub broker_name: String,
     #[serde(rename = "brokerAddrs")]
-    pub broker_addrs: HashMap<String, String>, // "0" -> "ip:port" (0=master, 1+=slave)
+    pub broker_addrs: HashMap<i64, String>, // broker id -> "ip:port" (0=master)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,7 +141,7 @@ pub struct QueueData {
     #[serde(rename = "writeQueueNums")]
     pub write_queue_nums: i32,
     pub perm: i32,
-    #[serde(rename = "topicSynFlag")]
+    #[serde(rename = "topicSysFlag", default)]
     pub topic_syn_flag: i32,
 }
 

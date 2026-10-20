@@ -132,7 +132,7 @@ impl RocketMQClient {
             return Err("Empty response body".to_string());
         }
 
-        let cluster_response: ClusterInfoResponse = serde_json::from_slice(&body)
+        let cluster_response: ClusterInfoResponse = parse_json_normalized(&body)
             .map_err(|e| format!("Parse cluster info failed: {}", e))?;
 
         let topic_count = self.get_topic_list().map(|topics| topics.len() as u32).unwrap_or(0);
@@ -206,7 +206,7 @@ impl RocketMQClient {
             return Err("Empty route info response".to_string());
         }
 
-        let route: TopicRouteData = serde_json::from_slice(&body)
+        let route: TopicRouteData = parse_json_normalized(&body)
             .map_err(|e| format!("Parse route info failed: {}", e))?;
 
         Ok(route)
@@ -217,7 +217,7 @@ impl RocketMQClient {
         route
             .broker_datas
             .first()
-            .and_then(|b| b.broker_addrs.get("0"))
+            .and_then(|b| b.broker_addrs.get(&0))
             .cloned()
             .ok_or_else(|| format!("No broker found for topic: {}", topic))
     }
@@ -368,7 +368,7 @@ impl RocketMQClient {
                 route
                     .broker_datas
                     .iter()
-                    .filter_map(|b| b.broker_addrs.get("0").cloned())
+                    .filter_map(|b| b.broker_addrs.get(&0).cloned())
                     .collect()
             })
             .unwrap_or_default();
@@ -422,4 +422,38 @@ fn parse_msg_id_addr(msg_id: &str) -> Result<String, String> {
     let ip = format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3]);
     let port = i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
     Ok(format!("{}:{}", ip, port))
+}
+
+fn normalize_json_keys(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len() + 16);
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '{' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
+            let start = i + 1;
+            let mut j = start;
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == ':' {
+                out.push('{');
+                out.push('"');
+                out.extend(&chars[start..j]);
+                out.push('"');
+                out.push(':');
+                i = j + 1;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+fn parse_json_normalized<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, String> {
+    let s = String::from_utf8(body.to_vec())
+        .map_err(|e| format!("Invalid UTF-8 response: {}", e))?;
+    let normalized = normalize_json_keys(&s);
+    serde_json::from_str::<T>(&normalized).map_err(|e| format!("Parse JSON failed: {}", e))
 }
