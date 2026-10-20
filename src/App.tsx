@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useLayoutEffect, useState, type MouseEvent } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Activity, Database, List, MessageSquare, Users, Send, Shield, GitBranch, Settings } from 'lucide-react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { Activity, Database, List, MessageSquare, Users, Send, Shield, GitBranch, Settings, Moon, Sun, RadioTower, Languages, Unplug, Minus, Square, Copy, X } from 'lucide-react'
 import TopicsPage from './TopicsPage'
 import ConsumersPage from './ConsumersPage'
 import ProducerPage from './ProducerPage'
@@ -13,12 +14,24 @@ import OpsPage from './OpsPage'
 import type { ClusterProfile } from './types'
 import { errorMessage } from './utils/errors'
 import ErrorBoundary from './components/ErrorBoundary'
-import './App.css'
+import NameServerCombo from './components/NameServerCombo'
+import { addNameServerHistory } from './utils/nameServerHistory'
+import { useI18n } from './i18n'
 
 type Page = 'dashboard' | 'topics' | 'consumers' | 'producers' | 'messages' | 'cluster' | 'acl' | 'trace' | 'ops'
 
 function App() {
-  const [nameServer, setNameServer] = useState('192.168.153.149:9876')
+  const { language, setLanguage, t } = useI18n()
+  const isDesktop = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+  const [maximized, setMaximized] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      return localStorage.getItem('rocketmq.theme') === 'light' ? 'light' : 'dark'
+    } catch {
+      return 'dark'
+    }
+  })
+  const [nameServer, setNameServer] = useState('')
   const [aclEnabled, setAclEnabled] = useState(false)
   const [accessKey, setAccessKey] = useState('')
   const [secretKey, setSecretKey] = useState('')
@@ -27,6 +40,74 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const [traceTarget, setTraceTarget] = useState<string | null>(null)
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.documentElement.style.colorScheme = theme
+    try {
+      localStorage.setItem('rocketmq.theme', theme)
+    } catch {
+      // Keep the selected appearance for this session when storage is disabled.
+    }
+  }, [theme])
+
+  useEffect(() => {
+    if (!isDesktop) return
+    let unlisten: (() => void) | undefined
+    try {
+      const appWindow = getCurrentWindow()
+      const sync = () => {
+        appWindow.isMaximized().then(setMaximized).catch(() => {})
+      }
+      sync()
+      appWindow
+        .onResized(sync)
+        .then((fn) => {
+          unlisten = fn
+        })
+        .catch(() => {})
+    } catch {
+      // Window API unavailable (e.g. running in a plain browser preview).
+    }
+    return () => unlisten?.()
+  }, [isDesktop])
+
+  const minimizeWindow = () => {
+    if (!isDesktop) return
+    try {
+      getCurrentWindow().minimize().catch(() => {})
+    } catch {
+      // Window API unavailable.
+    }
+  }
+
+  const toggleMaximizeWindow = () => {
+    if (!isDesktop) return
+    try {
+      const appWindow = getCurrentWindow()
+      appWindow
+        .toggleMaximize()
+        .then(() => appWindow.isMaximized().then(setMaximized).catch(() => {}))
+        .catch(() => {})
+    } catch {
+      // Window API unavailable.
+    }
+  }
+
+  const closeWindow = () => {
+    if (!isDesktop) return
+    try {
+      getCurrentWindow().close().catch(() => {})
+    } catch {
+      // Window API unavailable.
+    }
+  }
+
+  const handleDragRegionDoubleClick = (event: MouseEvent) => {
+    if ((event.target as HTMLElement).closest('[data-tauri-drag-region]')) {
+      toggleMaximizeWindow()
+    }
+  }
 
   const connectTo = async (
     server: string,
@@ -55,6 +136,7 @@ function App() {
       setAccessKey(useAcl ? access : '')
       setSecretKey(useAcl ? secret : '')
       setConnected(true)
+      addNameServerHistory(server)
       return true
     } catch (err) {
       setError(errorMessage(err))
@@ -67,6 +149,12 @@ function App() {
   }
 
   const handleConnect = () => connectTo(nameServer, aclEnabled, accessKey, secretKey)
+  const displayError = (message: string | null) => {
+    if (!message) return null
+    const match = message.match(/^Connection to (.+?) failed: (.+)$/)
+    if (match) return t('Connection to {address} failed: {error}', { address: match[1], error: match[2] })
+    return message
+  }
 
   const handleDisconnect = async () => {
     try {
@@ -89,129 +177,127 @@ function App() {
     { id: 'ops', icon: Settings, label: 'OPS' },
   ]
 
+  const pageTitle = navItems.find((item) => item.id === currentPage)?.label ?? 'Dashboard'
+
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-100">
-      {/* Sidebar */}
-      <div className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col">
-        {/* Logo */}
-        <div className="p-6 border-b border-slate-800">
-          <h1 className="text-xl font-bold text-cyan-400">RocketMQ</h1>
-          <p className="text-sm text-slate-400">Management Console</p>
+    <div className="app-shell">
+      <aside className="app-sidebar">
+        <div className="app-brand">
+          <div className="app-brand-mark"><RadioTower size={21} strokeWidth={2.1} /></div>
+          <div className="app-brand-copy">
+            <h1>RocketMQ</h1>
+            <p>{t('Management Console')}</p>
+          </div>
+          <span className="app-version">0.3</span>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1">
+        <div className="app-nav-label">{t('WORKSPACE')}</div>
+        <nav className="app-nav" aria-label={t('Primary navigation')}>
           {navItems.map((item) => {
             const Icon = item.icon
             return (
               <button
                 key={item.id}
                 onClick={() => setCurrentPage(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  currentPage === item.id
-                    ? 'bg-cyan-500/10 text-cyan-400'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
-                }`}
+                className={`app-nav-item ${currentPage === item.id ? 'is-active' : ''}`}
+                aria-current={currentPage === item.id ? 'page' : undefined}
+                aria-label={t(item.label)}
+                title={t(item.label)}
               >
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
+                <Icon size={18} strokeWidth={1.8} />
+                <span>{t(item.label)}</span>
+                {currentPage === item.id && <span className="app-nav-indicator" />}
               </button>
             )
           })}
         </nav>
 
-        {/* Connection Status */}
-        <div className="p-4 border-t border-slate-800">
-          <div className="flex items-center gap-2 text-sm">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                connected ? 'bg-green-500' : 'bg-slate-600'
-              }`}
-            />
-            <span className="text-slate-400">
-              {connected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-slate-950 border-b border-slate-800 px-6 py-4">
-          <div className="flex items-center justify-between">
+        <div className="app-sidebar-footer">
+          <div className="app-sidebar-status">
+            <span className={`status-indicator ${connected ? 'is-online' : ''}`} />
             <div>
-              <h2 className="text-xl font-semibold capitalize">{currentPage}</h2>
+              <strong>{t(connected ? 'Connected' : 'Disconnected')}</strong>
+              <span>{connected ? nameServer : t('No active cluster')}</span>
             </div>
-            <div className="flex items-center gap-4">
-              <input
-                type="text"
+          </div>
+          <span className="app-build-label">{t('ROCKETMQ REMOTING · LOCAL')}</span>
+        </div>
+      </aside>
+
+      <div className="app-main">
+        <header className={`app-topbar ${isDesktop ? 'has-window-controls' : ''}`} data-tauri-drag-region onDoubleClick={handleDragRegionDoubleClick}>
+          <div className="app-topbar-title" data-tauri-drag-region>
+            <span className="app-breadcrumb">ROCKETMQ / {t(pageTitle).toUpperCase()}</span>
+            <h2>{t(pageTitle)}</h2>
+          </div>
+          <div className="app-toolbar">
+            <div className="app-connection-form">
+              <NameServerCombo
                 value={nameServer}
-                onChange={(e) => setNameServer(e.target.value)}
+                onChange={setNameServer}
+                onSubmit={handleConnect}
                 disabled={connected}
-                placeholder="NameServer Address"
-                className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+                placeholder={t('NameServer Address')}
+                ariaLabel={t('NameServer Address')}
               />
-              <label className="flex items-center gap-2 text-sm text-slate-400">
-                <input
-                  type="checkbox"
-                  checked={aclEnabled}
-                  onChange={(e) => setAclEnabled(e.target.checked)}
-                  disabled={connected}
-                  className="w-4 h-4 rounded border-slate-600 bg-slate-800"
-                />
-                ACL
+              <label className="app-acl-toggle">
+                <input type="checkbox" checked={aclEnabled} onChange={(e) => setAclEnabled(e.target.checked)} disabled={connected} />
+                <span>ACL</span>
               </label>
               {connected ? (
                 <button
                   onClick={handleDisconnect}
-                  className="px-6 py-2 bg-red-500 hover:bg-red-400 text-white rounded-lg transition-colors"
+                  className="app-button app-button-danger"
                 >
-                  Disconnect
+                  <Unplug size={15} />
+                  {t('Disconnect')}
                 </button>
               ) : (
                 <button
                   onClick={handleConnect}
                   disabled={connecting || !nameServer}
-                  className="px-6 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="app-button app-button-primary"
                 >
-                  {connecting ? 'Connecting...' : 'Connect'}
+                  {connecting ? t('Connecting...') : t('Connect')}
                 </button>
               )}
             </div>
+            <div className="app-toolbar-divider" />
+            <div className="app-preference-control" aria-label={t('Language')}>
+              <Languages size={15} />
+              <button className={language === 'en' ? 'is-selected' : ''} onClick={() => setLanguage('en')} aria-pressed={language === 'en'}>EN</button>
+              <span />
+              <button className={language === 'zh-CN' ? 'is-selected' : ''} onClick={() => setLanguage('zh-CN')} aria-pressed={language === 'zh-CN'}>中</button>
+            </div>
+            <div className="app-theme-control" aria-label={t('Theme')}>
+              <button title={t('Dark blue theme')} aria-label={t('Dark blue theme')} aria-pressed={theme === 'dark'} className={theme === 'dark' ? 'is-selected' : ''} onClick={() => setTheme('dark')}><Moon size={16} /></button>
+              <button title={t('Light gray theme')} aria-label={t('Light gray theme')} aria-pressed={theme === 'light'} className={theme === 'light' ? 'is-selected' : ''} onClick={() => setTheme('light')}><Sun size={16} /></button>
+            </div>
           </div>
+          {isDesktop && (
+            <div className="app-window-controls">
+              <button type="button" onClick={minimizeWindow} title={t('Minimize')} aria-label={t('Minimize')}>
+                <Minus size={16} />
+              </button>
+              <button type="button" onClick={toggleMaximizeWindow} title={t(maximized ? 'Restore' : 'Maximize')} aria-label={t(maximized ? 'Restore' : 'Maximize')}>
+                {maximized ? <Copy size={14} /> : <Square size={14} />}
+              </button>
+              <button type="button" className="is-close" onClick={closeWindow} title={t('Close')} aria-label={t('Close')}>
+                <X size={16} />
+              </button>
+            </div>
+          )}
           {aclEnabled && (
-            <div className="mt-3 flex items-center gap-3">
-              <input
-                type="text"
-                value={accessKey}
-                onChange={(e) => setAccessKey(e.target.value)}
-                disabled={connected}
-                placeholder="Access Key"
-                className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-              />
-              <input
-                type="password"
-                value={secretKey}
-                onChange={(e) => setSecretKey(e.target.value)}
-                disabled={connected}
-                placeholder="Secret Key"
-                className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50"
-              />
-              <span className="text-xs text-slate-500">
-                Requests are signed with HMAC-SHA1
-              </span>
+            <div className="app-acl-credentials">
+              <input type="text" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} disabled={connected} placeholder={t('Access Key')} aria-label={t('Access Key')} className="app-input" />
+              <input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} disabled={connected} placeholder={t('Secret Key')} aria-label={t('Secret Key')} className="app-input" />
+              <span>{t('Requests are signed with HMAC-SHA1')}</span>
             </div>
           )}
-          {error && (
-            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-              {error}
-            </div>
-          )}
+          {error && <div className="app-connect-error">{displayError(error)}</div>}
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="app-content">
           <ErrorBoundary key={currentPage}>
           {currentPage === 'dashboard' && <DashboardPage connected={connected} />}
 

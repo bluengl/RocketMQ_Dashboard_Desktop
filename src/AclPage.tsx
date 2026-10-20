@@ -10,6 +10,7 @@ import { errorMessage } from './utils/errors'
 import Pagination from './components/Pagination'
 import ErrorNotice from './components/ErrorNotice'
 import { usePagination } from './hooks/usePagination'
+import { useI18n } from './i18n'
 
 interface AclPageProps {
   connected: boolean
@@ -70,6 +71,7 @@ const toList = (text: string): string[] =>
     .filter(Boolean)
 
 export default function AclPage({ connected }: AclPageProps) {
+  const { t } = useI18n()
   const [userResults, setUserResults] = useState<BrokerAclUsers[]>([])
   const [ruleResults, setRuleResults] = useState<BrokerAclRules[]>([])
   const [loading, setLoading] = useState(false)
@@ -113,6 +115,18 @@ export default function AclPage({ connected }: AclPageProps) {
       setRuleResults([])
     }
   }, [connected])
+
+  useEffect(() => {
+    if (!showUserForm && !showRuleForm) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowUserForm(false)
+        setShowRuleForm(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showUserForm, showRuleForm])
 
   const users = useMemo(() => {
     const merged = new Map<string, { user: AclUserInfo; brokers: string[] }>()
@@ -190,11 +204,11 @@ export default function AclPage({ connected }: AclPageProps) {
 
   const handleSaveUser = async () => {
     if (!userForm.username.trim()) {
-      setError('Username is required')
+      setError(t('Username is required'))
       return
     }
     if (!userForm.password.trim()) {
-      setError('Password is required')
+      setError(t('Password is required'))
       return
     }
 
@@ -225,7 +239,7 @@ export default function AclPage({ connected }: AclPageProps) {
   }
 
   const handleDeleteUser = async (username: string) => {
-    if (!window.confirm(`Delete ACL user "${username}" from all brokers?`)) return
+    if (!window.confirm(t('Delete ACL user "{username}" from all brokers?', { username }))) return
     setError(null)
     try {
       await invoke('delete_acl_user', { username })
@@ -266,15 +280,15 @@ export default function AclPage({ connected }: AclPageProps) {
 
   const handleSaveRule = async () => {
     if (!ruleForm.subject.trim()) {
-      setError('Subject is required')
+      setError(t('Subject is required'))
       return
     }
     if (!ruleForm.resource.trim()) {
-      setError('Resource is required')
+      setError(t('Resource is required'))
       return
     }
     if (ruleForm.actions.length === 0) {
-      setError('Select at least one action')
+      setError(t('Select at least one action'))
       return
     }
 
@@ -298,7 +312,7 @@ export default function AclPage({ connected }: AclPageProps) {
   }
 
   const handleDeleteRule = async (rule: FlatRule) => {
-    if (!window.confirm(`Delete ACL rule "${rule.subject} → ${rule.resource}"?`)) return
+    if (!window.confirm(t('Delete ACL rule "{subject} → {resource}"?', { subject: rule.subject, resource: rule.resource }))) return
     setError(null)
     try {
       await invoke('delete_acl_rule', {
@@ -344,9 +358,9 @@ export default function AclPage({ connected }: AclPageProps) {
             <Shield className="w-6 h-6 text-cyan-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-slate-50">ACL Management</h1>
+            <h1 className="text-2xl font-semibold text-slate-50">{t('ACL Management')}</h1>
             <p className="text-sm text-slate-400">
-              {users.length} users · {rules.length} rules · {userResults.length} brokers
+            {users.length} {t('users')} · {rules.length} {t('rules')} · {userResults.length} {t('brokers')}
             </p>
           </div>
         </div>
@@ -358,7 +372,7 @@ export default function AclPage({ connected }: AclPageProps) {
             className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('Refresh')}
           </button>
           <button
             onClick={tab === 'users' ? openCreateUser : openCreateRule}
@@ -366,7 +380,7 @@ export default function AclPage({ connected }: AclPageProps) {
             className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
-            {tab === 'users' ? 'Create User' : 'Create Rule'}
+            {tab === 'users' ? t('Create User') : t('Create Rule')}
           </button>
         </div>
       </div>
@@ -382,7 +396,7 @@ export default function AclPage({ connected }: AclPageProps) {
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            {item === 'users' ? 'Users' : 'ACL Rules'}
+            {item === 'users' ? t('Users') : t('ACL Rules')}
           </button>
         ))}
       </div>
@@ -391,7 +405,7 @@ export default function AclPage({ connected }: AclPageProps) {
 
       {brokerErrors.length > 0 && (
         <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-300 text-sm space-y-1">
-          <div className="font-medium">Some brokers returned errors</div>
+          <div className="font-medium">{t('Some brokers returned errors')}</div>
           {brokerErrors.map((result, index) => (
             <div key={`${result.broker_addr}-${index}`} className="font-mono text-xs">
               {result.broker_addr}: {result.error}
@@ -402,12 +416,12 @@ export default function AclPage({ connected }: AclPageProps) {
 
       {!connected ? (
         <div className="text-center py-12 text-slate-400">
-          Please connect to RocketMQ to manage ACL
+          {t('Please connect to RocketMQ to manage ACL')}
         </div>
       ) : loading ? (
         <div className="text-center py-12 text-slate-400">
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
-          Loading ACL configuration...
+          {t('Loading ACL configuration...')}
         </div>
       ) : tab === 'users' ? (
         <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
@@ -415,19 +429,19 @@ export default function AclPage({ connected }: AclPageProps) {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-900 text-slate-400 text-sm">
-                  <th className="text-left px-4 py-3 font-medium">Username</th>
-                  <th className="text-left px-4 py-3 font-medium">Password</th>
-                  <th className="text-left px-4 py-3 font-medium">Type</th>
-                  <th className="text-left px-4 py-3 font-medium">Status</th>
-                  <th className="text-left px-4 py-3 font-medium">Brokers</th>
-                  <th className="text-right px-4 py-3 font-medium">Actions</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Username')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Password')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Type')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Status')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Brokers')}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t('Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
                 {users.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
-                      No ACL users found. ACL (authentication) may not be enabled on the broker.
+                      {t('No ACL users found. ACL (authentication) may not be enabled on the broker.')}
                     </td>
                   </tr>
                 ) : (
@@ -444,7 +458,7 @@ export default function AclPage({ connected }: AclPageProps) {
                           <button
                             onClick={() => toggleReveal(user.username)}
                             className="p-1 hover:bg-slate-700 rounded text-slate-500 hover:text-slate-200"
-                            title={revealed.has(user.username) ? 'Hide password' : 'Show password'}
+                            title={t(revealed.has(user.username) ? 'Hide password' : 'Show password')}
                           >
                             {revealed.has(user.username) ? (
                               <EyeOff className="w-3.5 h-3.5" />
@@ -462,7 +476,7 @@ export default function AclPage({ connected }: AclPageProps) {
                               : 'bg-slate-700 text-slate-300'
                           }`}
                         >
-                          {user.userType || 'Normal'}
+                          {t(user.userType || 'Normal')}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -473,7 +487,7 @@ export default function AclPage({ connected }: AclPageProps) {
                               : 'bg-green-500/10 text-green-400'
                           }`}
                         >
-                          {user.userStatus || 'enable'}
+                          {t(user.userStatus || 'enable')}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -487,14 +501,14 @@ export default function AclPage({ connected }: AclPageProps) {
                           <button
                             onClick={() => openEditUser(user)}
                             className="p-2 hover:bg-slate-700 rounded transition-colors text-slate-400 hover:text-slate-100"
-                            title="Edit user"
+                            title={t('Edit user')}
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user.username)}
                             className="p-2 hover:bg-red-500/10 rounded transition-colors text-slate-400 hover:text-red-400"
-                            title="Delete user"
+                            title={t('Delete user')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -521,20 +535,20 @@ export default function AclPage({ connected }: AclPageProps) {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-900 text-slate-400 text-sm">
-                  <th className="text-left px-4 py-3 font-medium">Subject</th>
-                  <th className="text-left px-4 py-3 font-medium">Resource</th>
-                  <th className="text-left px-4 py-3 font-medium">Actions</th>
-                  <th className="text-left px-4 py-3 font-medium">Source IPs</th>
-                  <th className="text-left px-4 py-3 font-medium">Decision</th>
-                  <th className="text-left px-4 py-3 font-medium">Brokers</th>
-                  <th className="text-right px-4 py-3 font-medium">Actions</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Subject')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Resource')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Actions')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Source IPs')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Decision')}</th>
+                  <th className="text-left px-4 py-3 font-medium">{t('Brokers')}</th>
+                  <th className="text-right px-4 py-3 font-medium">{t('Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
                 {rules.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
-                      No ACL rules found. ACL (authorization) may not be enabled on the broker.
+                      {t('No ACL rules found. ACL (authorization) may not be enabled on the broker.')}
                     </td>
                   </tr>
                 ) : (
@@ -556,7 +570,7 @@ export default function AclPage({ connected }: AclPageProps) {
                               : 'bg-green-500/10 text-green-400'
                           }`}
                         >
-                          {rule.decision || 'Allow'}
+                          {t(rule.decision || 'Allow')}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -570,14 +584,14 @@ export default function AclPage({ connected }: AclPageProps) {
                           <button
                             onClick={() => openEditRule(rule)}
                             className="p-2 hover:bg-slate-700 rounded transition-colors text-slate-400 hover:text-slate-100"
-                            title="Edit rule"
+                            title={t('Edit rule')}
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteRule(rule)}
                             className="p-2 hover:bg-red-500/10 rounded transition-colors text-slate-400 hover:text-red-400"
-                            title="Delete rule"
+                            title={t('Delete rule')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -601,18 +615,19 @@ export default function AclPage({ connected }: AclPageProps) {
       )}
 
       {showUserForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-[480px] space-y-4">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowUserForm(false)}>
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-[480px] max-h-[90vh] overflow-y-auto space-y-4" onClick={(event) => event.stopPropagation()}>
             <h3 className="text-lg font-semibold text-slate-100">
-              {editingUser ? 'Edit ACL User' : 'Create ACL User'}
+              {editingUser ? t('Edit ACL User') : t('Create ACL User')}
             </h3>
 
             {error && <ErrorNotice error={error} compact />}
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Username</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Username')}</label>
               <input
                 type="text"
+                autoFocus
                 value={userForm.username}
                 disabled={editingUser}
                 onChange={(e) => setUserForm({ ...userForm, username: e.target.value })}
@@ -621,7 +636,7 @@ export default function AclPage({ connected }: AclPageProps) {
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Password</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Password')}</label>
               <input
                 type="text"
                 value={userForm.password}
@@ -632,7 +647,7 @@ export default function AclPage({ connected }: AclPageProps) {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm text-slate-400 block mb-1">User Type</label>
+                <label className="text-sm text-slate-400 block mb-1">{t('User Type')}</label>
                 <select
                   value={userForm.userType}
                   onChange={(e) => setUserForm({ ...userForm, userType: e.target.value })}
@@ -640,13 +655,13 @@ export default function AclPage({ connected }: AclPageProps) {
                 >
                   {USER_TYPES.map((type) => (
                     <option key={type} value={type}>
-                      {type}
+                      {t(type)}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-sm text-slate-400 block mb-1">Status</label>
+                <label className="text-sm text-slate-400 block mb-1">{t('Status')}</label>
                 <select
                   value={userForm.userStatus}
                   disabled={!editingUser}
@@ -655,7 +670,7 @@ export default function AclPage({ connected }: AclPageProps) {
                 >
                   {USER_STATUSES.map((status) => (
                     <option key={status} value={status}>
-                      {status}
+                      {t(status)}
                     </option>
                   ))}
                 </select>
@@ -663,7 +678,7 @@ export default function AclPage({ connected }: AclPageProps) {
             </div>
 
             <p className="text-xs text-slate-500">
-              Changes are applied to every master broker in the cluster.
+              {t('Changes are applied to every master broker in the cluster.')}
             </p>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -671,14 +686,14 @@ export default function AclPage({ connected }: AclPageProps) {
                 onClick={() => setShowUserForm(false)}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg"
               >
-                Cancel
+                {t('Cancel')}
               </button>
               <button
                 onClick={handleSaveUser}
                 disabled={savingUser}
                 className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg disabled:opacity-50"
               >
-                {savingUser ? 'Saving...' : 'Save'}
+                {savingUser ? t('Saving...') : t('Save')}
               </button>
             </div>
           </div>
@@ -686,23 +701,24 @@ export default function AclPage({ connected }: AclPageProps) {
       )}
 
       {showRuleForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-[560px] max-h-[90vh] overflow-y-auto space-y-4">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowRuleForm(false)}>
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-[560px] max-h-[90vh] overflow-y-auto space-y-4" onClick={(event) => event.stopPropagation()}>
             <h3 className="text-lg font-semibold text-slate-100">
-              {editingRule ? 'Edit ACL Rule' : 'Create ACL Rule'}
+              {editingRule ? t('Edit ACL Rule') : t('Create ACL Rule')}
             </h3>
 
             {error && <ErrorNotice error={error} compact />}
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Subject</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Subject')}</label>
               <input
                 type="text"
+                autoFocus
                 list="acl-subjects"
                 value={ruleForm.subject}
                 disabled={editingRule}
                 onChange={(e) => setRuleForm({ ...ruleForm, subject: e.target.value })}
-                placeholder="username"
+                placeholder={t('username')}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 font-mono text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-60"
               />
               <datalist id="acl-subjects">
@@ -713,19 +729,19 @@ export default function AclPage({ connected }: AclPageProps) {
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Resource</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Resource')}</label>
               <input
                 type="text"
                 value={ruleForm.resource}
                 disabled={editingRule}
                 onChange={(e) => setRuleForm({ ...ruleForm, resource: e.target.value })}
-                placeholder="topic:myTopic / group:myGroup / *"
+                placeholder={t('topic:myTopic / group:myGroup / *')}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 font-mono text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-60"
               />
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-2">Actions</label>
+              <label className="text-sm text-slate-400 block mb-2">{t('Actions')}</label>
               <div className="flex flex-wrap gap-2">
                 {ACTIONS.map((action) => (
                   <label
@@ -742,7 +758,7 @@ export default function AclPage({ connected }: AclPageProps) {
                       checked={ruleForm.actions.includes(action)}
                       onChange={() => toggleAction(action)}
                     />
-                    {action}
+                    {t(action)}
                   </label>
                 ))}
               </div>
@@ -750,19 +766,19 @@ export default function AclPage({ connected }: AclPageProps) {
 
             <div>
               <label className="text-sm text-slate-400 block mb-1">
-                Source IPs <span className="text-slate-500">(optional, comma separated)</span>
+                {t('Source IPs')} <span className="text-slate-500">({t('optional, comma separated')})</span>
               </label>
               <input
                 type="text"
                 value={ruleForm.sourceIps}
                 onChange={(e) => setRuleForm({ ...ruleForm, sourceIps: e.target.value })}
-                placeholder="192.168.1.0/24, 10.0.0.1"
+                placeholder={t('192.168.1.0/24, 10.0.0.1')}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 font-mono text-sm focus:outline-none focus:border-cyan-500"
               />
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Decision</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Decision')}</label>
               <select
                 value={ruleForm.decision}
                 onChange={(e) => setRuleForm({ ...ruleForm, decision: e.target.value })}
@@ -770,14 +786,14 @@ export default function AclPage({ connected }: AclPageProps) {
               >
                 {DECISIONS.map((decision) => (
                   <option key={decision} value={decision}>
-                    {decision}
+                    {t(decision)}
                   </option>
                 ))}
               </select>
             </div>
 
             <p className="text-xs text-slate-500">
-              Changes are applied to every master broker in the cluster.
+              {t('Changes are applied to every master broker in the cluster.')}
             </p>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -785,14 +801,14 @@ export default function AclPage({ connected }: AclPageProps) {
                 onClick={() => setShowRuleForm(false)}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg"
               >
-                Cancel
+                {t('Cancel')}
               </button>
               <button
                 onClick={handleSaveRule}
                 disabled={savingRule}
                 className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg disabled:opacity-50"
               >
-                {savingRule ? 'Saving...' : 'Save'}
+                {savingRule ? t('Saving...') : t('Save')}
               </button>
             </div>
           </div>

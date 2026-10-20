@@ -4,6 +4,7 @@ import type { ClusterProfile } from './types'
 import { errorMessage } from './utils/errors'
 import { loadClusterProfiles, saveClusterProfiles, newProfileId } from './utils/clusterProfiles'
 import ErrorNotice from './components/ErrorNotice'
+import { useI18n } from './i18n'
 
 interface OpsPageProps {
   connected: boolean
@@ -36,6 +37,7 @@ export default function OpsPage({
   onConnect,
   onDisconnect,
 }: OpsPageProps) {
+  const { t } = useI18n()
   const [profiles, setProfiles] = useState<ClusterProfile[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -48,6 +50,15 @@ export default function OpsPage({
   useEffect(() => {
     setProfiles(loadClusterProfiles())
   }, [])
+
+  useEffect(() => {
+    if (!showForm) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowForm(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showForm])
 
   const persist = (next: ClusterProfile[]) => {
     setProfiles(next)
@@ -77,7 +88,7 @@ export default function OpsPage({
   const handleSave = () => {
     const nameServer = form.nameServer.trim()
     if (!nameServer) {
-      setError('NameServer address is required')
+      setError(t('NameServer address is required'))
       return
     }
 
@@ -99,7 +110,7 @@ export default function OpsPage({
   }
 
   const handleDelete = (profile: ClusterProfile) => {
-    if (!window.confirm(`Delete cluster profile "${profile.name}"?`)) return
+    if (!window.confirm(t('Delete cluster profile "{name}"?', { name: profile.name }))) return
     persist(profiles.filter((item) => item.id !== profile.id))
   }
 
@@ -109,7 +120,7 @@ export default function OpsPage({
     try {
       const ok = await onConnect(profile)
       if (!ok) {
-        setError(`Connection to ${profile.nameServer} failed`)
+        setError(`Connection to ${profile.nameServer} failed: connection rejected`)
       }
     } catch (err) {
       setError(errorMessage(err))
@@ -136,8 +147,8 @@ export default function OpsPage({
           <Settings className="w-6 h-6 text-cyan-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold text-slate-50">OPS</h1>
-          <p className="text-sm text-slate-400">NameServer profiles and multi-cluster switching</p>
+          <h1 className="text-2xl font-semibold text-slate-50">{t('OPS')}</h1>
+          <p className="text-sm text-slate-400">{t('NameServer profiles and multi-cluster switching')}</p>
         </div>
       </div>
 
@@ -151,10 +162,10 @@ export default function OpsPage({
             />
             <div>
               <div className="text-sm font-medium text-slate-100">
-                {connected ? 'Connected' : 'Not connected'}
+                {t(connected ? 'Connected' : 'Not connected')}
               </div>
               <div className="text-xs text-slate-400 font-mono">
-                {connected ? currentNameServer : 'Select a cluster profile to connect'}
+                {connected ? currentNameServer : t('Select a cluster profile to connect')}
               </div>
             </div>
           </div>
@@ -165,13 +176,13 @@ export default function OpsPage({
               className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
             >
               <Unplug className="w-4 h-4" />
-              {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+              {disconnecting ? t('Disconnecting...') : t('Disconnect')}
             </button>
           )}
         </div>
         {connected && currentProfile && (
           <div className="mt-3 text-xs text-slate-400">
-            Active profile: <span className="text-slate-200">{currentProfile.name}</span>
+            {t('Active profile:')} <span className="text-slate-200">{currentProfile.name}</span>
             {currentProfile.aclEnabled && (
               <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300">ACL</span>
             )}
@@ -179,33 +190,33 @@ export default function OpsPage({
         )}
       </div>
 
-      <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+      <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden ops-profile-table">
         <div className="px-4 py-3 bg-slate-900 flex items-center justify-between">
           <div className="flex items-center gap-2 text-slate-200 font-medium">
             <Server className="w-4 h-4 text-slate-400" />
-            Cluster Profiles ({profiles.length})
+            {t('Cluster Profiles')} ({profiles.length})
           </div>
           <button
             onClick={openCreate}
             className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg flex items-center gap-2 text-sm transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Add Cluster
+            {t('Add Cluster')}
           </button>
         </div>
 
         {profiles.length === 0 ? (
           <div className="text-center py-10 text-sm text-slate-400">
-            No saved clusters. Add a NameServer profile to switch between clusters quickly.
+            {t('No saved clusters. Add a NameServer profile to switch between clusters quickly.')}
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="bg-slate-900 text-slate-400 text-xs">
-                <th className="text-left px-4 py-2 font-medium">Name</th>
-                <th className="text-left px-4 py-2 font-medium">NameServer</th>
+                <th className="text-left px-4 py-2 font-medium">{t('Name')}</th>
+                <th className="text-left px-4 py-2 font-medium">{t('NameServer')}</th>
                 <th className="text-left px-4 py-2 font-medium">ACL</th>
-                <th className="text-right px-4 py-2 font-medium">Actions</th>
+                <th className="text-right px-4 py-2 font-medium">{t('Actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
@@ -216,14 +227,14 @@ export default function OpsPage({
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-100">{profile.name}</div>
                       {isCurrent && (
-                        <div className="text-[11px] text-green-400">active connection</div>
+                        <div className="text-[11px] text-green-400">{t('active connection')}</div>
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono text-slate-300">{profile.nameServer}</td>
                     <td className="px-4 py-3">
                       {profile.aclEnabled ? (
                         <span className="px-2 py-0.5 rounded text-xs bg-amber-500/10 text-amber-300">
-                          enabled
+                          {t('enabled')}
                         </span>
                       ) : (
                         <span className="text-slate-500">—</span>
@@ -237,19 +248,19 @@ export default function OpsPage({
                           className="px-3 py-1 text-sm bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                         >
                           <Plug className="w-3.5 h-3.5" />
-                          {busyId === profile.id ? 'Connecting...' : isCurrent ? 'Connected' : 'Connect'}
+                          {busyId === profile.id ? t('Connecting...') : isCurrent ? t('Connected') : t('Connect')}
                         </button>
                         <button
                           onClick={() => openEdit(profile)}
                           className="p-2 hover:bg-slate-700 rounded transition-colors text-slate-400 hover:text-slate-100"
-                          title="Edit profile"
+                          title={t('Edit profile')}
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(profile)}
                           className="p-2 hover:bg-red-500/10 rounded transition-colors text-slate-400 hover:text-red-400"
-                          title="Delete profile"
+                          title={t('Delete profile')}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -264,11 +275,11 @@ export default function OpsPage({
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-[30rem] space-y-4">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowForm(false)}>
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-[30rem] max-h-[90vh] overflow-y-auto space-y-4" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-slate-100">
-                {editingId ? 'Edit Cluster Profile' : 'Add Cluster Profile'}
+                {editingId ? t('Edit Cluster Profile') : t('Add Cluster Profile')}
               </h3>
               <button
                 onClick={() => setShowForm(false)}
@@ -281,23 +292,25 @@ export default function OpsPage({
             {error && <ErrorNotice error={error} compact />}
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Display Name</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Display Name')}</label>
               <input
                 type="text"
+                autoFocus
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. production"
+                placeholder={t('e.g. production')}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
               />
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">NameServer Address</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('NameServer Address')}</label>
               <input
                 type="text"
                 value={form.nameServer}
                 onChange={(e) => setForm({ ...form, nameServer: e.target.value })}
                 placeholder="192.168.1.100:9876"
+                aria-label={t('NameServer Address')}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 font-mono text-sm focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -309,13 +322,13 @@ export default function OpsPage({
                 onChange={(e) => setForm({ ...form, aclEnabled: e.target.checked })}
                 className="w-4 h-4 rounded border-slate-600 bg-slate-900"
               />
-              Require ACL credentials
+              {t('Require ACL credentials')}
             </label>
 
             {form.aclEnabled && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-sm text-slate-400 block mb-1">Access Key</label>
+                  <label className="text-sm text-slate-400 block mb-1">{t('Access Key')}</label>
                   <input
                     type="text"
                     value={form.accessKey}
@@ -324,7 +337,7 @@ export default function OpsPage({
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-slate-400 block mb-1">Secret Key</label>
+                  <label className="text-sm text-slate-400 block mb-1">{t('Secret Key')}</label>
                   <input
                     type="password"
                     value={form.secretKey}
@@ -340,13 +353,13 @@ export default function OpsPage({
                 onClick={() => setShowForm(false)}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg"
               >
-                Cancel
+                {t('Cancel')}
               </button>
               <button
                 onClick={handleSave}
                 className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg"
               >
-                Save
+                {t('Save')}
               </button>
             </div>
           </div>

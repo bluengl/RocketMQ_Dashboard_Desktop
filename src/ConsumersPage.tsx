@@ -9,6 +9,7 @@ import type {
 import Pagination from './components/Pagination'
 import ErrorNotice from './components/ErrorNotice'
 import { usePagination } from './hooks/usePagination'
+import { useI18n } from './i18n'
 
 interface ConsumersPageProps {
   connected: boolean
@@ -17,6 +18,7 @@ interface ConsumersPageProps {
 type ResetType = 'max' | 'min' | 'offset'
 
 export default function ConsumersPage({ connected }: ConsumersPageProps) {
+  const { t } = useI18n()
   const [groups, setGroups] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,16 +70,16 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
     }
   }
 
-  const loadProgress = async (group: string, targetTopic: string) => {
+  const loadProgress = async (group: string, targetTopic: string, silent = false) => {
     if (!targetTopic) return
-    setProgressLoading(true)
-    setProgressError(null)
+    if (!silent) setProgressLoading(true)
     try {
       const rows = await invoke<ConsumerProgress[]>('get_consumer_progress', {
         group,
         topic: targetTopic,
       })
       setProgress(rows)
+      setProgressError(null)
 
       const totalConsumerOffset = rows.reduce((sum, row) => sum + row.consumerOffset, 0)
       const now = Date.now()
@@ -89,10 +91,13 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
       }
       sampleRef.current = { group, topic: targetTopic, offset: totalConsumerOffset, time: now }
     } catch (err) {
-      setProgressError(err as string)
-      setProgress([])
+      // Keep the last successful snapshot when a background poll fails.
+      if (!silent) {
+        setProgressError(err as string)
+        setProgress([])
+      }
     } finally {
-      setProgressLoading(false)
+      if (!silent) setProgressLoading(false)
     }
   }
 
@@ -132,6 +137,8 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
   const handleTopicChange = (next: string) => {
     setTopic(next)
     setTps(null)
+    setProgress([])
+    setProgressError(null)
     sampleRef.current = null
     if (selectedGroup && next) {
       loadProgress(selectedGroup, next)
@@ -173,7 +180,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
         await loadProgress(selectedGroup, resetTopic)
       }
       setError(null)
-      setResetMessage(`Reset ${applied} queue(s) to ${resetType}`)
+      setResetMessage(t('Reset {count} queue(s) to {type}', { count: applied, type: t(resetType) }))
     } catch (err) {
       setResetMessage(err as string)
     } finally {
@@ -184,10 +191,20 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
   useEffect(() => {
     if (!selectedGroup || !topic) return
     const timer = setInterval(() => {
-      loadProgress(selectedGroup, topic)
+      // Background refresh: keep the current table on screen while polling.
+      loadProgress(selectedGroup, topic, true)
     }, 5000)
     return () => clearInterval(timer)
   }, [selectedGroup, topic])
+
+  useEffect(() => {
+    if (!showReset) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowReset(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showReset])
 
   useEffect(() => {
     if (connected) {
@@ -223,9 +240,9 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
             <Users className="w-6 h-6 text-green-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-slate-50">Consumers</h1>
+            <h1 className="text-2xl font-semibold text-slate-50">{t('Consumers')}</h1>
             <p className="text-sm text-slate-400">
-              {filteredGroups.length} consumer group{filteredGroups.length !== 1 ? 's' : ''}
+              {filteredGroups.length} {t(filteredGroups.length === 1 ? 'consumer group' : 'consumer groups')}
             </p>
           </div>
         </div>
@@ -236,7 +253,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
           className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('Refresh')}
         </button>
       </div>
 
@@ -244,7 +261,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
         <input
           type="text"
-          placeholder="Search consumer groups..."
+          placeholder={t('Search consumer groups...')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
@@ -261,31 +278,31 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
       {!connected ? (
         <div className="text-center py-12 text-slate-400">
-          Please connect to RocketMQ to view consumer groups
+          {t('Please connect to RocketMQ to view consumer groups')}
         </div>
       ) : loading ? (
         <div className="text-center py-12 text-slate-400">
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
-          Loading consumer groups...
+          {t('Loading consumer groups...')}
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-4">
           {/* Group list */}
           <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-            <div className="px-4 py-3 bg-slate-900 text-slate-400 text-sm font-medium">
-              Groups ({filteredGroups.length})
+            <div className="px-5 py-4 bg-slate-900 text-slate-400 text-sm font-medium">
+              {t('Groups ({count})', { count: filteredGroups.length })}
             </div>
             <div className="max-h-[32rem] overflow-y-auto divide-y divide-slate-700">
               {filteredGroups.length === 0 ? (
                 <div className="text-center py-8 text-slate-400 text-sm">
-                  {searchQuery ? 'No groups match your search' : 'No consumer groups found'}
+                  {searchQuery ? t('No groups match your search') : t('No consumer groups found')}
                 </div>
               ) : (
                 groupPager.pageItems.map((group) => (
                   <button
                     key={group}
                     onClick={() => selectGroup(group)}
-                    className={`w-full text-left px-4 py-3 transition-colors ${
+                    className={`w-full text-left px-5 py-3.5 transition-colors ${
                       selectedGroup === group
                         ? 'bg-cyan-500/10 text-cyan-400'
                         : 'text-slate-200 hover:bg-slate-750'
@@ -310,7 +327,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
           <div className="col-span-2 space-y-4">
             {!selectedGroup ? (
               <div className="bg-slate-800 border border-slate-700 rounded-lg p-12 text-center text-slate-400">
-                Select a consumer group to view its progress and connections
+                {t('Select a consumer group to view its progress and connections')}
               </div>
             ) : (
               <>
@@ -319,11 +336,11 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                     <div className="flex items-center gap-3">
                       <div className="font-medium text-cyan-400">{selectedGroup}</div>
                       {connectionLoading ? (
-                        <span className="text-xs text-slate-400">Loading...</span>
+                        <span className="text-xs text-slate-400">{t('Loading...')}</span>
                       ) : offline ? (
-                        <span className="px-2 py-0.5 rounded text-xs bg-slate-700 text-slate-300">Offline</span>
+                        <span className="px-2 py-0.5 rounded text-xs bg-slate-700 text-slate-300">{t('Offline')}</span>
                       ) : connection ? (
-                        <span className="px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-400">Online</span>
+                        <span className="px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-400">{t('Online')}</span>
                       ) : null}
                     </div>
                     <button
@@ -331,22 +348,22 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                       className="px-3 py-1.5 text-sm bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 rounded-lg flex items-center gap-2 transition-colors"
                     >
                       <RotateCcw className="w-4 h-4" />
-                      Reset Offset
+                      {t('Reset Offset')}
                     </button>
                   </div>
 
                   {connection && (
                     <div className="flex flex-wrap gap-6 text-sm">
                       <div>
-                        <span className="text-slate-400">Consume Type:</span>{' '}
+                        <span className="text-slate-400">{t('Consume Type:')}</span>{' '}
                         <span className="text-slate-200">{connection.consumeType ?? '-'}</span>
                       </div>
                       <div>
-                        <span className="text-slate-400">Message Model:</span>{' '}
+                        <span className="text-slate-400">{t('Message Model:')}</span>{' '}
                         <span className="text-slate-200">{connection.messageModel ?? '-'}</span>
                       </div>
                       <div>
-                        <span className="text-slate-400">From Where:</span>{' '}
+                        <span className="text-slate-400">{t('From Where:')}</span>{' '}
                         <span className="text-slate-200">{connection.consumeFromWhere ?? '-'}</span>
                       </div>
                     </div>
@@ -354,32 +371,32 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
                   {offline && (
                     <div className="text-sm text-amber-400/90">
-                      This consumer group is not online. Select a topic below to inspect its committed offsets.
+                      {t('This consumer group is not online. Select a topic below to inspect its committed offsets.')}
                     </div>
                   )}
 
                   <div className="grid grid-cols-4 gap-4">
                     <div className="bg-slate-900 rounded-lg p-3">
-                      <div className="text-xs text-slate-400">Online Instances</div>
+                      <div className="text-xs text-slate-400">{t('Online Instances')}</div>
                       <div className="text-xl font-semibold text-slate-100">
                         {connection?.connectionSet.length ?? 0}
                       </div>
                     </div>
                     <div className="bg-slate-900 rounded-lg p-3">
-                      <div className="text-xs text-slate-400">Queues</div>
+                      <div className="text-xs text-slate-400">{t('Queues')}</div>
                       <div className="text-xl font-semibold text-slate-100">{progress.length}</div>
                     </div>
                     <div className="bg-slate-900 rounded-lg p-3">
-                      <div className="text-xs text-slate-400">Total Lag</div>
+                      <div className="text-xs text-slate-400">{t('Total Lag')}</div>
                       <div className={`text-xl font-semibold ${totalLag > 0 ? 'text-orange-400' : 'text-slate-100'}`}>
                         {totalLag.toLocaleString()}
                         {maxLag > 0 && (
-                          <span className="text-xs font-normal text-slate-400 ml-2">max {maxLag.toLocaleString()}</span>
+                          <span className="text-xs font-normal text-slate-400 ml-2">{t('max {value}', { value: maxLag.toLocaleString() })}</span>
                         )}
                       </div>
                     </div>
                     <div className="bg-slate-900 rounded-lg p-3">
-                      <div className="text-xs text-slate-400">Consume TPS</div>
+                      <div className="text-xs text-slate-400">{t('Consume TPS')}</div>
                       <div
                         className={`text-xl font-semibold ${
                           tps !== null && tps > 0 ? 'text-green-400' : 'text-slate-100'
@@ -389,11 +406,11 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                           ? '—'
                           : tps.toLocaleString(undefined, { maximumFractionDigits: 1 })}
                         {tps !== null && (
-                          <span className="text-xs font-normal text-slate-400 ml-1">msg/s</span>
+                          <span className="text-xs font-normal text-slate-400 ml-1">{t('msg/s')}</span>
                         )}
                       </div>
                       <div className="text-[11px] text-slate-500 truncate" title={topic}>
-                        {tps === null ? 'sampling…' : topic || 'no topic selected'}
+                        {tps === null ? t('sampling…') : topic || t('no topic selected')}
                       </div>
                     </div>
                   </div>
@@ -401,10 +418,10 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
                 {/* Progress */}
                 <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-                  <div className="px-4 py-3 bg-slate-900 flex items-center justify-between gap-3">
+                  <div className="px-5 py-4 bg-slate-900 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-slate-200 font-medium">
                       <List className="w-4 h-4 text-slate-400" />
-                      Consume Progress
+                      {t('Consume Progress')}
                     </div>
                     <div className="flex items-center gap-2">
                       <select
@@ -412,7 +429,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                         onChange={(e) => handleTopicChange(e.target.value)}
                         className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-cyan-500"
                       >
-                        <option value="">Select a topic...</option>
+                        <option value="">{t('Select a topic...')}</option>
                         {topicOptions.map((t) => (
                           <option key={t} value={t}>
                             {t}
@@ -423,7 +440,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                         onClick={() => selectedGroup && topic && loadProgress(selectedGroup, topic)}
                         disabled={!topic || progressLoading}
                         className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-slate-100 disabled:opacity-50"
-                        title="Refresh progress"
+                        title={t('Refresh progress')}
                       >
                         <RefreshCw className={`w-4 h-4 ${progressLoading ? 'animate-spin' : ''}`} />
                       </button>
@@ -434,22 +451,22 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                     <div className="px-4 py-3 text-sm text-red-400 border-b border-slate-700">{progressError}</div>
                   )}
 
-                  {progressLoading ? (
-                    <div className="text-center py-10 text-slate-400 text-sm">Loading progress...</div>
+                  {progressLoading && progress.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 text-sm">{t('Loading progress...')}</div>
                   ) : progress.length === 0 ? (
                     <div className="text-center py-10 text-slate-400 text-sm">
-                      {topic ? 'No progress data for this topic' : 'Select a topic to view consume progress'}
+                      {topic ? t('No progress data for this topic') : t('Select a topic to view consume progress')}
                     </div>
                   ) : (
                     <div className="max-h-[24rem] overflow-y-auto">
                       <table className="w-full">
                         <thead className="sticky top-0 bg-slate-900">
                           <tr className="text-slate-400 text-xs">
-                            <th className="text-left px-4 py-2 font-medium">Broker</th>
-                            <th className="text-left px-4 py-2 font-medium">Queue</th>
-                            <th className="text-right px-4 py-2 font-medium">Broker Offset</th>
-                            <th className="text-right px-4 py-2 font-medium">Consumer Offset</th>
-                            <th className="text-right px-4 py-2 font-medium">Lag</th>
+                    <th className="text-left px-4 py-2 font-medium">{t('Broker')}</th>
+                    <th className="text-left px-4 py-2 font-medium">{t('Queue')}</th>
+                    <th className="text-right px-4 py-2 font-medium">{t('Broker Offset')}</th>
+                    <th className="text-right px-4 py-2 font-medium">{t('Consumer Offset')}</th>
+                    <th className="text-right px-4 py-2 font-medium">{t('Lag')}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-700">
@@ -480,7 +497,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
                 {/* Connections */}
                 <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-                  <div className="px-4 py-3 bg-slate-900 flex items-center gap-2 text-slate-200 font-medium">
+                  <div className="px-5 py-4 bg-slate-900 flex items-center gap-2 text-slate-200 font-medium">
                     <Radio className="w-4 h-4 text-slate-400" />
                     Online Connections
                   </div>
@@ -492,10 +509,10 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                     <table className="w-full">
                       <thead>
                         <tr className="bg-slate-900 text-slate-400 text-xs">
-                          <th className="text-left px-4 py-2 font-medium">Client ID</th>
-                          <th className="text-left px-4 py-2 font-medium">Address</th>
-                          <th className="text-left px-4 py-2 font-medium">Language</th>
-                          <th className="text-left px-4 py-2 font-medium">Version</th>
+                          <th className="text-left px-4 py-2 font-medium">{t('Client ID')}</th>
+                          <th className="text-left px-4 py-2 font-medium">{t('Address')}</th>
+                          <th className="text-left px-4 py-2 font-medium">{t('Language')}</th>
+                          <th className="text-left px-4 py-2 font-medium">{t('Version')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-700">
@@ -519,10 +536,10 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
       {/* Reset Offset Modal */}
       {showReset && selectedGroup && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-[28rem] space-y-4">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowReset(false)}>
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-[28rem] max-h-[90vh] overflow-y-auto space-y-4" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-100">Reset Consumer Offset</h3>
+              <h3 className="text-lg font-semibold text-slate-100">{t('Reset Consumer Offset')}</h3>
               <button
                 onClick={() => setShowReset(false)}
                 className="p-1 hover:bg-slate-700 rounded text-slate-400"
@@ -536,13 +553,13 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Topic</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Topic')}</label>
               <select
                 value={resetTopic}
                 onChange={(e) => setResetTopic(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
               >
-                <option value="">Select a topic...</option>
+                <option value="">{t('Select a topic...')}</option>
                 {topicOptions.map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -552,39 +569,40 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Queue</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Queue')}</label>
               <select
                 value={resetQueue}
                 onChange={(e) => setResetQueue(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
               >
-                <option value="all">All queues</option>
+                <option value="all">{t('All queues')}</option>
                 {resetQueueOptions.map((q) => (
                   <option key={q} value={q}>
-                    Queue {q}
+                    {t('Queue {id}', { id: q })}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="text-sm text-slate-400 block mb-1">Reset To</label>
+              <label className="text-sm text-slate-400 block mb-1">{t('Reset To')}</label>
               <select
                 value={resetType}
                 onChange={(e) => setResetType(e.target.value as ResetType)}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
               >
-                <option value="max">Latest offset (max)</option>
-                <option value="min">Earliest offset (min)</option>
-                <option value="offset">Custom offset</option>
+                <option value="max">{t('Latest offset (max)')}</option>
+                <option value="min">{t('Earliest offset (min)')}</option>
+                <option value="offset">{t('Custom offset')}</option>
               </select>
             </div>
 
             {resetType === 'offset' && (
               <div>
-                <label className="text-sm text-slate-400 block mb-1">Offset</label>
+                <label className="text-sm text-slate-400 block mb-1">{t('Offset')}</label>
                 <input
-                  type="number"
+                type="number"
+                autoFocus={resetType === 'offset'}
                   value={resetOffsetValue}
                   onChange={(e) => setResetOffsetValue(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
@@ -595,7 +613,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
             {resetMessage && <div className="text-sm text-red-400">{resetMessage}</div>}
 
             <div className="text-xs text-amber-400/80">
-              This changes the committed offsets for the consumer group and cannot be undone.
+              {t('This changes the committed offsets for the consumer group and cannot be undone.')}
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -603,14 +621,14 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                 onClick={() => setShowReset(false)}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg"
               >
-                Cancel
+                {t('Cancel')}
               </button>
               <button
                 onClick={handleReset}
                 disabled={resetting || !resetTopic}
                 className="px-4 py-2 bg-orange-500 hover:bg-orange-400 text-white rounded-lg disabled:opacity-50"
               >
-                {resetting ? 'Resetting...' : 'Reset'}
+                {resetting ? t('Resetting...') : t('Reset')}
               </button>
             </div>
           </div>

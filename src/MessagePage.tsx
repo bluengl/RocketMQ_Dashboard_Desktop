@@ -6,6 +6,7 @@ import { errorMessage } from './utils/errors'
 import Pagination from './components/Pagination'
 import ErrorNotice from './components/ErrorNotice'
 import { usePagination } from './hooks/usePagination'
+import { useI18n } from './i18n'
 
 interface MessagePageProps {
   connected: boolean
@@ -22,12 +23,14 @@ function decodeBody(body?: string): string {
   }
 }
 
-function formatTimestamp(ts?: number): string {
+function formatTimestamp(ts: number | undefined, locale: string): string {
   if (!ts) return '-'
-  return new Date(ts).toLocaleString('zh-CN')
+  return new Date(ts).toLocaleString(locale)
 }
 
 export default function MessagePage({ connected, onViewTrace }: MessagePageProps) {
+  const { t, language } = useI18n()
+  const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US'
   const [msgId, setMsgId] = useState('')
   const [topic, setTopic] = useState('')
   const [key, setKey] = useState('')
@@ -103,23 +106,23 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
           <MessageSquare className="w-6 h-6 text-cyan-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold text-slate-50">Messages</h1>
-          <p className="text-sm text-slate-400">Query messages by ID or Topic + Key</p>
+          <h1 className="text-2xl font-semibold text-slate-50">{t('Messages')}</h1>
+          <p className="text-sm text-slate-400">{t('Query messages by ID or Topic + Key')}</p>
         </div>
       </div>
 
       {/* Query forms */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-4 message-query-grid">
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-2 text-slate-300 font-medium">
             <Search className="w-4 h-4 text-cyan-400" />
-            Query by Message ID
+            {t('Query by Message ID')}
           </div>
           <input
             type="text"
             value={msgId}
             onChange={(e) => setMsgId(e.target.value)}
-            placeholder="Message ID (32 hex chars)"
+            placeholder={t('Message ID (32 hex chars)')}
             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono text-sm"
           />
           <button
@@ -127,27 +130,27 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
             disabled={!connected || loading || !msgId.trim()}
             className="w-full px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Search
+            {t('Search')}
           </button>
         </div>
 
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-2 text-slate-300 font-medium">
             <KeyRound className="w-4 h-4 text-orange-400" />
-            Query by Topic + Key
+            {t('Query by Topic + Key')}
           </div>
           <input
             type="text"
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="Topic"
+            placeholder={t('Topic')}
             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
           />
           <input
             type="text"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="Message Key"
+            placeholder={t('Message Key')}
             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
           />
           <button
@@ -155,20 +158,20 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
             disabled={!connected || loading || !topic.trim() || !key.trim()}
             className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-400 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Search
+            {t('Search')}
           </button>
         </div>
 
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-2 text-slate-300 font-medium">
             <Clock className="w-4 h-4 text-green-400" />
-            Query by Time Range
+            {t('Query by Time Range')}
           </div>
           <input
             type="text"
             value={timeTopic}
             onChange={(e) => setTimeTopic(e.target.value)}
-            placeholder="Topic"
+            placeholder={t('Topic')}
             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
           />
           <input
@@ -188,7 +191,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
             disabled={!connected || loading || !timeTopic.trim() || !beginTime || !endTime}
             className="w-full px-4 py-2 bg-green-500 hover:bg-green-400 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Search
+            {t('Search')}
           </button>
         </div>
       </div>
@@ -196,22 +199,22 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
       {error && <ErrorNotice error={error} />}
 
       {!connected ? (
-        <div className="text-center py-12 text-slate-400">Please connect to RocketMQ to query messages</div>
+        <div className="text-center py-12 text-slate-400">{t('Please connect to RocketMQ to query messages')}</div>
       ) : loading ? (
         <div className="text-center py-12 text-slate-400">
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
-          Querying messages...
+          {t('Querying messages...')}
         </div>
       ) : messages.length === 0 ? (
         <div className="text-center py-12 text-slate-400">
-          {hasQueried ? 'No messages found' : 'Enter a Message ID, or a Topic + Key, to search'}
+          {hasQueried ? t('No messages found') : t('Enter a Message ID, or a Topic + Key, to search')}
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-4 message-results-grid">
           {/* Message list */}
           <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-700 text-sm font-medium text-slate-300">
-              {messages.length} message{messages.length !== 1 ? 's' : ''}
+            <div className="px-5 py-4 border-b border-slate-700 text-sm font-medium text-slate-300">
+              {messages.length} {t(messages.length === 1 ? 'message' : 'messages')}
             </div>
             <div className="divide-y divide-slate-700 max-h-96 overflow-y-auto">
               {messagePager.pageItems.map((m, i) => (
@@ -222,9 +225,9 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
                     selected?.msgId === m.msgId ? 'bg-slate-700/50' : ''
                   }`}
                 >
-                  <div className="text-sm font-medium text-slate-100 truncate">{m.msgId ?? 'N/A'}</div>
+                  <div className="text-sm font-medium text-slate-100 truncate">{m.msgId ?? t('N/A')}</div>
                   <div className="text-xs text-slate-400 mt-1">
-                    {m.topic} · offset {m.queueOffset ?? '-'}
+                    {m.topic} · {t('Offset')} {m.queueOffset ?? '-'}
                   </div>
                 </button>
               ))}
@@ -244,42 +247,42 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
             {selected ? (
               <>
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-slate-200">Message Detail</h3>
+                  <h3 className="font-medium text-slate-200">{t('Message Detail')}</h3>
                   {onViewTrace && selected.msgId && (
                     <button
                       onClick={() => onViewTrace(selected.msgId!)}
                       className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm rounded-lg transition-colors"
                     >
                       <GitBranch className="w-4 h-4 text-cyan-400" />
-                      View Trace
+                      {t('View Trace')}
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                  <Detail label="Topic" value={selected.topic} />
-                  <Detail label="Msg ID" value={selected.msgId} mono />
-                  <Detail label="Queue" value={selected.queueId?.toString()} />
-                  <Detail label="Queue Offset" value={selected.queueOffset?.toString()} />
-                  <Detail label="Born Timestamp" value={formatTimestamp(selected.bornTimestamp)} />
-                  <Detail label="Store Timestamp" value={formatTimestamp(selected.storeTimestamp)} />
-                  <Detail label="Born Host" value={selected.bornHost} />
-                  <Detail label="Store Host" value={selected.storeHost} />
-                  <Detail label="Reconsume Times" value={selected.reconsumeTimes?.toString()} />
-                  <Detail label="Tags" value={selected.properties?.TAGS} />
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm message-detail-grid">
+                  <Detail label={t('Topic')} value={selected.topic} />
+                  <Detail label={t('Msg ID')} value={selected.msgId} mono />
+                  <Detail label={t('Queue')} value={selected.queueId?.toString()} />
+                  <Detail label={t('Queue Offset')} value={selected.queueOffset?.toString()} />
+                  <Detail label={t('Born Timestamp')} value={formatTimestamp(selected.bornTimestamp, locale)} />
+                  <Detail label={t('Store Timestamp')} value={formatTimestamp(selected.storeTimestamp, locale)} />
+                  <Detail label={t('Born Host')} value={selected.bornHost} />
+                  <Detail label={t('Store Host')} value={selected.storeHost} />
+                  <Detail label={t('Reconsume Times')} value={selected.reconsumeTimes?.toString()} />
+                  <Detail label={t('Tags')} value={selected.properties?.TAGS} />
                 </div>
                 <div>
-                  <div className="text-sm text-slate-400 mb-1">Keys</div>
+                  <div className="text-sm text-slate-400 mb-1">{t('Keys')}</div>
                   <div className="text-sm text-slate-100">{selected.properties?.KEYS ?? '-'}</div>
                 </div>
                 <div>
-                  <div className="text-sm text-slate-400 mb-1">Body</div>
+                  <div className="text-sm text-slate-400 mb-1">{t('Body')}</div>
                   <pre className="p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 whitespace-pre-wrap break-all max-h-64 overflow-auto">
-                    {decodeBody(selected.body) || '(empty body)'}
+                    {decodeBody(selected.body) || t('(empty body)')}
                   </pre>
                 </div>
               </>
             ) : (
-              <div className="text-center py-12 text-slate-400">Select a message to view details</div>
+              <div className="text-center py-12 text-slate-400">{t('Select a message to view details')}</div>
             )}
           </div>
         </div>

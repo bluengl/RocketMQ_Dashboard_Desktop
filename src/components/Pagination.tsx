@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useI18n } from '../i18n'
 
 interface PaginationProps {
   page: number
@@ -17,12 +18,13 @@ export default function Pagination({
   onPageChange,
   onPageSizeChange,
 }: PaginationProps) {
+  const { t } = useI18n()
   if (total === 0) return null
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2 border-t border-slate-700 text-xs text-slate-400">
+    <div className="rmq-pagination flex items-center justify-between gap-3 px-4 py-2 border-t border-slate-700 text-xs text-slate-400">
       <span>
-        {total.toLocaleString()} item{total !== 1 ? 's' : ''} · page {page} / {totalPages}
+        {total.toLocaleString()} {t(total === 1 ? 'item' : 'items')} · {t('Page {page} of {totalPages}', { page, totalPages })}
       </span>
       <div className="flex items-center gap-2">
         {onPageSizeChange && (
@@ -33,7 +35,7 @@ export default function Pagination({
           >
             {[10, 20, 50, 100].map((size) => (
               <option key={size} value={size}>
-                {size} / page
+                {size} {t('per page')}
               </option>
             ))}
           </select>
@@ -42,7 +44,7 @@ export default function Pagination({
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
           className="p-1 rounded hover:bg-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
-          title="Previous page"
+          title={t('Previous page')}
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -50,7 +52,7 @@ export default function Pagination({
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
           className="p-1 rounded hover:bg-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
-          title="Next page"
+          title={t('Next page')}
         >
           <ChevronRight className="w-4 h-4" />
         </button>

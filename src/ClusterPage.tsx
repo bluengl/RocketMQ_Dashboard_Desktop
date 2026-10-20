@@ -4,6 +4,7 @@ import { Database, RefreshCw, X } from 'lucide-react'
 import type { BrokerInfo, ClusterInfo } from './types'
 import { errorMessage } from './utils/errors'
 import ErrorNotice from './components/ErrorNotice'
+import { useI18n } from './i18n'
 import './styles/monitor.css'
 
 type RuntimeTable = Record<string, string>
@@ -45,6 +46,7 @@ function formatTps(raw: string | undefined) {
 }
 
 export default function ClusterPage({ connected }: ClusterPageProps) {
+  const { t } = useI18n()
   const [cluster, setCluster] = useState<ClusterInfo | null>(null)
   const [runtimeMap, setRuntimeMap] = useState<Record<string, RuntimeTable>>({})
   const [loading, setLoading] = useState(false)
@@ -154,16 +156,16 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
     <div className="rmq-page">
       <div className="rmq-page-header">
         <div>
-          <div className="rmq-page-title">Cluster</div>
+          <div className="rmq-page-title">{t('Cluster')}</div>
           <div className="rmq-page-subtitle">
-            Broker topology and runtime information
+            {t('Broker topology and runtime information')}
             {cluster && ` · ${cluster.brokers.length} brokers · ${clusters.length} clusters`}
           </div>
         </div>
         <div className="rmq-header-actions">
           <button className="rmq-btn" onClick={load} disabled={!connected || loading}>
             <RefreshCw size={15} className={loading ? 'rmq-spin' : undefined} />
-            Refresh
+            {t('Refresh')}
           </button>
         </div>
       </div>
@@ -174,33 +176,33 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
         <div className="rmq-card">
           <div className="rmq-empty">
             <Database size={40} style={{ opacity: 0.4 }} />
-            <span>Connect to RocketMQ to inspect the cluster</span>
+            <span>{t('Connect to RocketMQ to inspect the cluster')}</span>
           </div>
         </div>
       ) : loading && !cluster ? (
         <div className="rmq-card">
           <div className="rmq-empty">
             <RefreshCw size={28} className="rmq-spin" />
-            <span>Loading cluster topology…</span>
+            <span>{t('Loading cluster topology…')}</span>
           </div>
         </div>
       ) : (
         <>
           <div className="rmq-card">
             <div className="rmq-card-header">
-              <div className="rmq-card-title">Topology</div>
-              <div className="rmq-card-meta">Cluster → broker → addresses</div>
+              <div className="rmq-card-title">{t('Topology')}</div>
+              <div className="rmq-card-meta">{t('Cluster → broker → addresses')}</div>
             </div>
             <div className="rmq-topology">
               {clusters.length === 0 ? (
-                <div className="rmq-empty">No brokers reported by the name server</div>
+                <div className="rmq-empty">{t('No brokers reported by the name server')}</div>
               ) : (
                 clusters.map(([clusterName, brokers]) => (
                   <div className="rmq-cluster-block" key={clusterName}>
                     <div className="rmq-cluster-heading">
                       <Database size={15} />
                       {clusterName}
-                      <span className="rmq-cluster-count">{brokers.length} brokers</span>
+                      <span className="rmq-cluster-count">{brokers.length} {t('brokers')}</span>
                     </div>
                     <div className="rmq-broker-grid">
                       {brokers.map((broker) => {
@@ -219,34 +221,34 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
                                   broker.online ? 'rmq-badge-online' : 'rmq-badge-offline'
                                 }`}
                               >
-                                {broker.online ? 'Online' : 'Offline'}
+                                {t(broker.online ? 'Online' : 'Offline')}
                               </span>
                             </div>
                             {master && (
                               <div className="rmq-addr-row">
-                                <span className="rmq-addr-role">master</span>
+                                <span className="rmq-addr-role">{t('master')}</span>
                                 <span className="rmq-mono">{master}</span>
                               </div>
                             )}
                             {slaves.map((addr) => (
                               <div className="rmq-addr-row" key={addr}>
-                                <span className="rmq-addr-role">slave</span>
+                                <span className="rmq-addr-role">{t('slave')}</span>
                                 <span className="rmq-mono">{addr}</span>
                               </div>
                             ))}
                             {fallbackAddrs.map((addr, index) => (
                               <div className="rmq-addr-row" key={addr}>
-                                <span className="rmq-addr-role">addr {index + 1}</span>
+                                <span className="rmq-addr-role">{t('addr {index}', { index: index + 1 })}</span>
                                 <span className="rmq-mono">{addr}</span>
                               </div>
                             ))}
                             <div className="rmq-addr-row">
-                              <span className="rmq-addr-role">version</span>
+                              <span className="rmq-addr-role">{t('Version')}</span>
                               <span>{version}</span>
                             </div>
                             <div className="rmq-broker-node-actions">
                               <button className="rmq-link-btn" onClick={() => openRuntime(broker)}>
-                                View runtime info
+                                {t('View runtime info')}
                               </button>
                             </div>
                           </div>
@@ -261,27 +263,27 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
 
           <div className="rmq-card">
             <div className="rmq-card-header">
-              <div className="rmq-card-title">Brokers</div>
+              <div className="rmq-card-title">{t('Brokers')}</div>
             </div>
             <div className="rmq-table-wrap">
               <table className="rmq-table">
                 <thead>
                   <tr>
-                    <th>Broker</th>
-                    <th>Cluster</th>
-                    <th>Address</th>
-                    <th>Version</th>
-                    <th>Uptime</th>
-                    <th>Produce TPS</th>
-                    <th>Consume TPS</th>
-                    <th>Actions</th>
+                    <th>{t('Broker')}</th>
+                    <th>{t('Cluster')}</th>
+                    <th>{t('Address')}</th>
+                    <th>{t('Version')}</th>
+                    <th>{t('Uptime')}</th>
+                    <th>{t('Produce TPS')}</th>
+                    <th>{t('Consume TPS')}</th>
+                    <th>{t('Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(cluster?.brokers ?? []).length === 0 ? (
                     <tr>
                       <td className="rmq-empty-row" colSpan={8}>
-                        No brokers available
+                        {t('No brokers available')}
                       </td>
                     </tr>
                   ) : (
@@ -300,7 +302,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
                           <td className="rmq-num">{formatTps(table?.getTotalTps)}</td>
                           <td>
                             <button className="rmq-link-btn" onClick={() => openRuntime(broker)}>
-                              Runtime info
+                              {t('Runtime info')}
                             </button>
                           </td>
                         </tr>
@@ -325,8 +327,8 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
               <button
                 className="rmq-icon-btn"
                 onClick={() => setSelected(null)}
-                title="Close"
-                aria-label="Close"
+                title={t('Close')}
+                aria-label={t('Close')}
               >
                 <X size={18} />
               </button>
@@ -336,7 +338,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
               {runtimeLoading ? (
                 <div className="rmq-empty">
                   <RefreshCw size={24} className="rmq-spin" />
-                  <span>Loading runtime info…</span>
+                  <span>{t('Loading runtime info…')}</span>
                 </div>
               ) : runtime ? (
                 <>
@@ -348,7 +350,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
                         key === 'putTps' || key === 'getTotalTps' ? formatTps(value) : value
                       return (
                         <div className="rmq-detail-cell" key={key}>
-                          <div className="rmq-detail-label">{label}</div>
+                          <div className="rmq-detail-label">{t(label)}</div>
                           <div className="rmq-detail-value">{display}</div>
                         </div>
                       )
@@ -358,7 +360,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
                   <input
                     className="rmq-search"
                     type="search"
-                    placeholder="Filter runtime keys and values…"
+                    placeholder={t('Filter runtime keys and values…')}
                     value={runtimeFilter}
                     onChange={(event) => setRuntimeFilter(event.target.value)}
                   />
@@ -367,15 +369,15 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
                     <table className="rmq-table">
                       <thead>
                         <tr>
-                          <th>Key</th>
-                          <th>Value</th>
+                          <th>{t('Key')}</th>
+                          <th>{t('Value')}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredRuntime.length === 0 ? (
                           <tr>
                             <td className="rmq-empty-row" colSpan={2}>
-                              No matching entries
+                              {t('No matching entries')}
                             </td>
                           </tr>
                         ) : (
@@ -391,7 +393,7 @@ export default function ClusterPage({ connected }: ClusterPageProps) {
                   </div>
                 </>
               ) : !runtimeError ? (
-                <div className="rmq-empty">No runtime info available</div>
+                <div className="rmq-empty">{t('No runtime info available')}</div>
               ) : null}
             </div>
           </div>

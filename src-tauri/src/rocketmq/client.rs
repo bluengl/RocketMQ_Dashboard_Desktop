@@ -327,10 +327,7 @@ impl RocketMQClient {
         let (response, body) = self.send_command(&command)?;
 
         if response.code != SUCCESS {
-            return Err(format!(
-                "Get route info failed: code={}, remark={:?}",
-                response.code, response.remark
-            ));
+            return Err(describe_failure("Get route info failed", response.code, &response.remark));
         }
 
         if body.is_empty() {
@@ -343,18 +340,25 @@ impl RocketMQClient {
         Ok(route)
     }
 
-    fn broker_addr_for_topic(&self, topic: &str) -> Result<String, String> {
-        let route = self.get_route_info_by_topic(topic)?;
-        route
-            .broker_datas
-            .first()
-            .and_then(|b| b.broker_addrs.get(&0))
-            .cloned()
-            .ok_or_else(|| format!("No broker found for topic: {}", topic))
+    /// A missing topic is a normal "no results" case for message searches.
+    fn route_if_topic_exists(&self, topic: &str) -> Result<Option<TopicRouteData>, String> {
+        match self.get_route_info_by_topic(topic) {
+            Ok(route) => Ok(Some(route)),
+            Err(error) if error.contains(&format!("code={}", TOPIC_NOT_EXIST)) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     pub fn query_message_by_key(&self, topic: &str, key: &str) -> Result<Vec<MessageExt>, String> {
-        let broker_addr = self.broker_addr_for_topic(topic)?;
+        let Some(route) = self.route_if_topic_exists(topic)? else {
+            return Ok(Vec::new());
+        };
+        let broker_addr = route
+            .broker_datas
+            .first()
+            .and_then(|broker| broker.broker_addrs.get(&0))
+            .cloned()
+            .ok_or_else(|| format!("No broker found for topic: {}", topic))?;
         let mut ext = HashMap::new();
         ext.insert("topic".to_string(), topic.to_string());
         ext.insert("key".to_string(), key.to_string());
@@ -424,8 +428,15 @@ impl RocketMQClient {
     }
 
     pub fn query_message_by_time(&self, topic: &str, begin_ts: i64, end_ts: i64) -> Result<Vec<MessageExt>, String> {
-        let broker_addr = self.broker_addr_for_topic(topic)?;
-        let route = self.get_route_info_by_topic(topic)?;
+        let Some(route) = self.route_if_topic_exists(topic)? else {
+            return Ok(Vec::new());
+        };
+        let broker_addr = route
+            .broker_datas
+            .first()
+            .and_then(|broker| broker.broker_addrs.get(&0))
+            .cloned()
+            .ok_or_else(|| format!("No broker found for topic: {}", topic))?;
         let read_queue_nums = route.queue_datas.first().map(|q| q.read_queue_nums).unwrap_or(4) as i32;
         let mut all = Vec::new();
 
@@ -1633,8 +1644,14 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
-fn parse_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {
-    if body.is_empty() {
+fn describe_failure(context: &str, code: i32, remark: &Option<String>) -> String {
+    match remark {
+        Some(remark) => format!("{}: code={}, {}", context, code, remark),
+        None => format!("{}: code={}", context, code),
+    }
+}
+
+fn parse_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {    if body.is_empty() {
         return Ok(Vec::new());
     }
 

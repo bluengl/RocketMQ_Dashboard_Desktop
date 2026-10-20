@@ -1,5 +1,6 @@
 import { AlertCircle, Braces, WifiOff } from 'lucide-react'
 import { describeError, type ErrorKind } from '../utils/errors'
+import { useI18n } from '../i18n'
 
 const STYLES: Record<ErrorKind, { box: string; icon: typeof AlertCircle }> = {
   connection: { box: 'bg-red-500/10 border-red-500/20 text-red-400', icon: WifiOff },
@@ -14,6 +15,7 @@ interface ErrorNoticeProps {
 }
 
 export default function ErrorNotice({ error, compact = false }: ErrorNoticeProps) {
+  const { t } = useI18n()
   if (!error) return null
 
   const info = describeError(error)
@@ -28,7 +30,7 @@ export default function ErrorNotice({ error, compact = false }: ErrorNoticeProps
     >
       <Icon className="w-4 h-4 flex-shrink-0" />
       <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-black/20">
-        {info.label}
+        {t(info.label)}
       </span>
       <span className="break-all">{info.message}</span>
     </div>

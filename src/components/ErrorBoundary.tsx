@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { I18nContext, type Translator } from '../i18n'
 
 interface Props {
   children: ReactNode
@@ -8,8 +9,15 @@ interface State {
   error: Error | null
 }
 
+interface I18nContextValue {
+  t: Translator
+}
+
 // Prevents an unexpected render error in one page from blanking the whole app.
 export default class ErrorBoundary extends Component<Props, State> {
+  static contextType = I18nContext
+  declare context: I18nContextValue | null
+
   state: State = { error: null }
 
   static getDerivedStateFromError(error: Error): State {
@@ -21,10 +29,11 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   render() {
+    const t = this.context?.t ?? ((key: string) => key)
     if (this.state.error) {
       return (
         <div className="p-6 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300">
-          <div className="font-medium mb-2">This page failed to render</div>
+          <div className="font-medium mb-2">{t('This page failed to render')}</div>
           <pre className="text-xs whitespace-pre-wrap break-all text-red-200/80">
             {this.state.error.message}
           </pre>
@@ -32,7 +41,7 @@ export default class ErrorBoundary extends Component<Props, State> {
             onClick={() => this.setState({ error: null })}
             className="mt-3 px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded transition-colors"
           >
-            Retry
+            {t('Retry')}
           </button>
         </div>
       )
