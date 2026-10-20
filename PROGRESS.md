@@ -2,6 +2,46 @@
 
 > **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 4 Cluster + Dashboard（运行时信息/拓扑/TPS 趋势）、阶段 5 Producer 查询、阶段 6 Message Trace、阶段 7 ACL（用户/规则 CRUD + 请求签名）、阶段 8 OPS/多集群/分页/错误分类/打包配置 已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
+## 测试记录（2026-10-20）
+
+测试环境：`192.168.153.149:9876`（NameServer）、`192.168.153.149:10911`（Broker，V5_3_2）。
+
+**后端只读联调（真实集群）**
+
+| 命令 | 结果 |
+|------|------|
+| `connect_cluster` / `get_cluster_info` | ✅ 1 broker / 13 topics |
+| `get_topic_list` / `get_topic_route` | ✅ 解析正确 |
+| `get_consumer_groups` | ✅ 8 个组（201，逐 Broker 聚合） |
+| `get_consumer_progress`（离线组 + topic） | ✅ 返回已提交位点 |
+| `get_consumer_progress`（离线组无 topic） | ✅ 明确提示需选择 topic |
+| `get_producer_groups` / `get_producer_connections` | ✅ 空结果 |
+| `get_dashboard_metrics` | ✅ 指标与运行时长正常 |
+| `get_broker_runtime_info` | ✅ 60 项指标，含 `runtime`/`putTps`/`getTotalTps` |
+| `query_message_by_time` | ✅ 空结果（集群无消息） |
+| `query_message_trace` / `query_message_trace_by_key` | ✅ 未启用 trace 时返回空轨迹 |
+| `list_acl_users` | ✅ ACL 未启用时返回逐 Broker 错误（UI 正常展示） |
+
+**前端 UI 实测（Vite + Tauri invoke stub，逐页验证）**
+
+Dashboard、Topics（列表/路由/创建弹窗/权限）、Consumers（组列表/进度/连接/TPS 采样）、Producers、Messages（ID 查询/详情/body 解码/View Trace）、Trace、Cluster（拓扑/运行时弹窗）、ACL（用户/规则/错误提示）、OPS（Profile 弹窗）、断开连接后各页空态 —— 均正常，无渲染异常。
+
+**本次发现并修复的问题**
+
+1. **`query_message_by_id` 缺少 `offset`（严重）**：`VIEW_MESSAGE_BY_ID`(33) 按 commitlog 物理偏移查询，原实现未从 msgId 解出偏移，Broker 抛 `NullPointerException: ViewMessageRequestHeader.getOffset()`。已改为从 msgId 后 8 字节解码 offset 并发送（[client.rs](src-tauri/src/rocketmq/client.rs) `decode_msg_id`）。
+2. **查询无结果被当作错误**：`query_message_by_key` 在无匹配时 Broker 返回 `QUERY_NOT_FOUND`(22)，前端因此显示红色错误。现已将 22 视为空结果。
+3. **缺少错误边界（严重）**：任一页面渲染异常会导致整个应用白屏。新增 [ErrorBoundary.tsx](src/components/ErrorBoundary.tsx)，按页面隔离并可重试；已用异常数据实测验证。
+4. **Topic 权限显示**：`perm=7` 原显示为数字 `7`，现按位解析为 `READ | WRITE | INHERIT`。
+5. **消息页初始空态**：查询前提示 "No messages found" 改为引导文案。
+6. **死代码**：移除未使用的 `send_generic_request`，`cargo check` 恢复 0 warning。
+
+**未能端到端验证（环境限制）**
+
+- 集群内无业务消息 → 消息成功响应的 body 解析（JSON 数组）未在真实消息上验证。
+- 无在线消费者/生产者 → 连接列表成功分支未实测。
+- Trace 未启用、ACL 未启用 → 对应成功分支未实测。
+- Topic 创建/删除、重置位点、ACL CRUD 属写操作，未在真实集群执行。
+
 ## 项目概述
 基于 Tauri 2 + React 18 + TypeScript 的 RocketMQ 管理控制台桌面应用
 

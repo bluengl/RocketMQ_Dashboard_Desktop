@@ -10,10 +10,14 @@ interface TopicsPageProps {
   connected: boolean
 }
 
-const PERM_LABEL: Record<number, string> = {
-  2: 'WRITE',
-  4: 'READ',
-  6: 'READ_WRITE',
+// RocketMQ permission bits: 1 = INHERIT, 2 = WRITE, 4 = READ.
+function formatPerm(perm: number): string {
+  const parts: string[] = []
+  if (perm & 4) parts.push('READ')
+  if (perm & 2) parts.push('WRITE')
+  if (parts.length === 0) parts.push('NONE')
+  if (perm & 1) parts.push('INHERIT')
+  return parts.join(' | ')
 }
 
 export default function TopicsPage({ connected }: TopicsPageProps) {
@@ -253,7 +257,7 @@ export default function TopicsPage({ connected }: TopicsPageProps) {
                   {route.queueDatas.map((q, i) => (
                     <div key={i} className="text-slate-200 mb-1">
                       {q.brokerName}: {q.readQueueNums} read / {q.writeQueueNums} write ·{' '}
-                      {PERM_LABEL[q.perm] ?? q.perm}
+                      {formatPerm(q.perm)}
                     </div>
                   ))}
                 </div>

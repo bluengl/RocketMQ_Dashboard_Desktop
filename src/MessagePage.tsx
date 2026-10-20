@@ -38,11 +38,13 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
   const [selected, setSelected] = useState<MessageInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hasQueried, setHasQueried] = useState(false)
   const messagePager = usePagination(messages, 20)
 
   const searchById = async () => {
     if (!msgId.trim()) return
     setLoading(true)
+    setHasQueried(true)
     setError(null)
     try {
       const result = await invoke<MessageInfo[]>('query_message_by_id', { msgId: msgId.trim() })
@@ -58,6 +60,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
   const searchByKey = async () => {
     if (!topic.trim() || !key.trim()) return
     setLoading(true)
+    setHasQueried(true)
     setError(null)
     try {
       const result = await invoke<MessageInfo[]>('query_message_by_key', {
@@ -76,6 +79,7 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
   const searchByTime = async () => {
     if (!timeTopic.trim() || !beginTime || !endTime) return
     setLoading(true)
+    setHasQueried(true)
     setError(null)
     try {
       const result = await invoke<MessageInfo[]>('query_message_by_time', {
@@ -199,7 +203,9 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
           Querying messages...
         </div>
       ) : messages.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">No messages found</div>
+        <div className="text-center py-12 text-slate-400">
+          {hasQueried ? 'No messages found' : 'Enter a Message ID, or a Topic + Key, to search'}
+        </div>
       ) : (
         <div className="grid grid-cols-3 gap-4">
           {/* Message list */}

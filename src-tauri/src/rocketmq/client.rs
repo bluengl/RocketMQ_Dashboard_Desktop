@@ -298,12 +298,6 @@ impl RocketMQClient {
         })
     }
 
-    pub fn send_generic_request(&self, request_code: i32, ext_fields: HashMap<String, String>) -> Result<(RemotingCommand, Vec<u8>), String> {
-        let command = RemotingCommand::new_request(request_code, next_opaque())
-            .with_ext_fields(ext_fields);
-        self.send_command(&command)
-    }
-
     pub fn get_topic_list(&self) -> Result<Vec<String>, String> {
         let command = RemotingCommand::new_request(GET_ALL_TOPIC_LIST_FROM_NAMESERVER, next_opaque());
         let (response, body) = self.send_command(&command)?;
@@ -370,6 +364,9 @@ impl RocketMQClient {
         let command = RemotingCommand::new_request(QUERY_MESSAGE, next_opaque()).with_ext_fields(ext);
         let (response, body) = self.send_command_to(&broker_addr, &command)?;
 
+        if response.code == QUERY_NOT_FOUND {
+            return Ok(Vec::new());
+        }
         if response.code != SUCCESS {
             return Err(format!(
                 "Query message by key failed: code={}, remark={:?}",
@@ -381,12 +378,18 @@ impl RocketMQClient {
     }
 
     pub fn query_message_by_id(&self, msg_id: &str) -> Result<Vec<MessageExt>, String> {
-        let broker_addr = parse_msg_id_addr(msg_id)?;
+        // VIEW_MESSAGE_BY_ID looks a message up by its physical commitlog offset,
+        // which is encoded in the last 8 bytes of the message ID.
+        let (broker_addr, offset) = decode_msg_id(msg_id)?;
         let mut ext = HashMap::new();
-        ext.insert("msgId".to_string(), msg_id.to_string());
+        ext.insert("offset".to_string(), offset.to_string());
         let command = RemotingCommand::new_request(VIEW_MESSAGE_BY_ID, next_opaque()).with_ext_fields(ext);
         let (response, body) = self.send_command_to(&broker_addr, &command)?;
 
+        if response.code == QUERY_NOT_FOUND {
+            // A lookup miss is an empty result, not a failure.
+            return Ok(Vec::new());
+        }
         if response.code != SUCCESS {
             return Err(format!(
                 "Query message by id failed: code={}, remark={:?}",
@@ -1646,7 +1649,7 @@ fn parse_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {
     Err("Failed to parse message response".to_string())
 }
 
-fn parse_msg_id_addr(msg_id: &str) -> Result<String, String> {
+fn decode_msg_id(msg_id: &str) -> Result<(String, i64), String> {
     if msg_id.len() != 32 {
         return Err("Invalid message ID: expected 32 hex characters".to_string());
     }
@@ -1660,7 +1663,11 @@ fn parse_msg_id_addr(msg_id: &str) -> Result<String, String> {
 
     let ip = format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3]);
     let port = i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-    Ok(format!("{}:{}", ip, port))
+    let offset = i64::from_be_bytes([
+        bytes[8], bytes[9], bytes[10], bytes[11],
+        bytes[12], bytes[13], bytes[14], bytes[15],
+    ]);
+    Ok((format!("{}:{}", ip, port), offset))
 }
 
 fn normalize_json_keys(s: &str) -> String {

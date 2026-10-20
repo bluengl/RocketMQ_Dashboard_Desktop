@@ -12,6 +12,7 @@ import AclPage from './AclPage'
 import OpsPage from './OpsPage'
 import type { ClusterProfile } from './types'
 import { errorMessage } from './utils/errors'
+import ErrorBoundary from './components/ErrorBoundary'
 import './App.css'
 
 type Page = 'dashboard' | 'topics' | 'consumers' | 'producers' | 'messages' | 'cluster' | 'acl' | 'trace' | 'ops'
@@ -211,6 +212,7 @@ function App() {
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-6">
+          <ErrorBoundary key={currentPage}>
           {currentPage === 'dashboard' && <DashboardPage connected={connected} />}
 
           {currentPage === 'topics' && <TopicsPage connected={connected} />}
@@ -253,6 +255,7 @@ function App() {
               onDisconnect={handleDisconnect}
             />
           )}
+          </ErrorBoundary>
         </main>
       </div>
     </div>
