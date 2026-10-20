@@ -26,6 +26,16 @@
 
 Dashboard、Topics（列表/路由/创建弹窗/权限）、Consumers（组列表/进度/连接/TPS 采样）、Producers、Messages（ID 查询/详情/body 解码/View Trace）、Trace、Cluster（拓扑/运行时弹窗）、ACL（用户/规则/错误提示）、OPS（Profile 弹窗）、断开连接后各页空态 —— 均正常，无渲染异常。
 
+补充验证：
+- 分页（25 条 Topic / 15 个消费组）：翻页、每页条数切换、越界钳制均正确。
+- 创建 Topic：提交参数为 `{ topic, brokerAddr: null, readQueueNums: 8, writeQueueNums: 8, perm: 6 }`，提交后弹窗关闭并刷新列表。
+- 前端 `invoke` 的命令名与 `main.rs` 注册列表逐一比对：无漏注册。仅 `get_broker_stats_data` / `get_broker_consume_stats` 未被界面使用（5.3.2 不支持）。
+- ACL 请求签名与官方 `AclClientRPCHook` / `AclUtils` 源码逐项核对：排序后的 extField 值（含 AccessKey，排除 Signature）+ body，HMAC-SHA1 后 Base64 —— 实现一致。
+
+**打包**
+
+- `cargo tauri build --debug` 成功编译并链接出 `rocketmq-dashboard.exe`；安装包（MSI/NSIS）阶段长时间停留在 WiX 工具链下载，未产出 `bundle/`。该环境需预装/联网获取 WiX 后重试打包。
+
 **本次发现并修复的问题**
 
 1. **`query_message_by_id` 缺少 `offset`（严重）**：`VIEW_MESSAGE_BY_ID`(33) 按 commitlog 物理偏移查询，原实现未从 msgId 解出偏移，Broker 抛 `NullPointerException: ViewMessageRequestHeader.getOffset()`。已改为从 msgId 后 8 字节解码 offset 并发送（[client.rs](src-tauri/src/rocketmq/client.rs) `decode_msg_id`）。
