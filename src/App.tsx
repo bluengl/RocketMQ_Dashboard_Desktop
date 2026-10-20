@@ -7,12 +7,16 @@ import MessagePage from './MessagePage'
 import TracePage from './TracePage'
 import DashboardPage from './DashboardPage'
 import ClusterPage from './ClusterPage'
+import AclPage from './AclPage'
 import './App.css'
 
 type Page = 'dashboard' | 'topics' | 'consumers' | 'messages' | 'cluster' | 'acl' | 'trace' | 'ops'
 
 function App() {
   const [nameServer, setNameServer] = useState('192.168.153.149:9876')
+  const [aclEnabled, setAclEnabled] = useState(false)
+  const [accessKey, setAccessKey] = useState('')
+  const [secretKey, setSecretKey] = useState('')
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,9 +31,9 @@ function App() {
       await invoke('connect_cluster', {
         config: {
           name_server_addrs: [nameServer],
-          acl_enabled: false,
-          access_key: null,
-          secret_key: null,
+          acl_enabled: aclEnabled,
+          access_key: aclEnabled ? accessKey : null,
+          secret_key: aclEnabled ? secretKey : null,
         },
       })
       setConnected(true)
@@ -125,6 +129,16 @@ function App() {
                 placeholder="NameServer Address"
                 className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
               />
+              <label className="flex items-center gap-2 text-sm text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={aclEnabled}
+                  onChange={(e) => setAclEnabled(e.target.checked)}
+                  disabled={connected}
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800"
+                />
+                ACL
+              </label>
               {connected ? (
                 <button
                   onClick={handleDisconnect}
@@ -143,6 +157,29 @@ function App() {
               )}
             </div>
           </div>
+          {aclEnabled && (
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                type="text"
+                value={accessKey}
+                onChange={(e) => setAccessKey(e.target.value)}
+                disabled={connected}
+                placeholder="Access Key"
+                className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+              />
+              <input
+                type="password"
+                value={secretKey}
+                onChange={(e) => setSecretKey(e.target.value)}
+                disabled={connected}
+                placeholder="Secret Key"
+                className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+              />
+              <span className="text-xs text-slate-500">
+                Requests are signed with HMAC-SHA1
+              </span>
+            </div>
+          )}
           {error && (
             <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
               {error}
@@ -174,8 +211,9 @@ function App() {
 
           {currentPage === 'cluster' && <ClusterPage connected={connected} />}
 
+          {currentPage === 'acl' && <AclPage connected={connected} />}
 
-          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'messages' && currentPage !== 'trace' && currentPage !== 'cluster' && (
+          {currentPage !== 'dashboard' && currentPage !== 'topics' && currentPage !== 'consumers' && currentPage !== 'messages' && currentPage !== 'trace' && currentPage !== 'cluster' && currentPage !== 'acl' && (
             <div className="text-center py-20 text-slate-400">
               <p className="text-lg">{currentPage.toUpperCase()} page - Coming soon</p>
             </div>

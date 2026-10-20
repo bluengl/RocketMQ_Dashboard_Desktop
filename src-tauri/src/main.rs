@@ -27,6 +27,14 @@ fn main() {
             commands::get_broker_runtime_info,
             commands::get_broker_stats_data,
             commands::get_broker_consume_stats,
+            commands::list_acl_users,
+            commands::create_acl_user,
+            commands::update_acl_user,
+            commands::delete_acl_user,
+            commands::list_acl_rules,
+            commands::create_acl_rule,
+            commands::update_acl_rule,
+            commands::delete_acl_rule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use base64::{engine::general_purpose, Engine as _};
+use hmac::{Hmac, Mac};
+use sha1::Sha1;
 
 use super::protocol::{
     RemotingCommand, ClusterInfoResponse, TopicListResponse, TopicRouteData, MessageExt,
@@ -18,6 +20,9 @@ use super::protocol::{
     DEFAULT_TRACE_TOPIC, TRACE_CONTENT_SPLITOR, TRACE_FIELD_SPLITOR,
     TOPIC_NOT_EXIST, QUERY_NOT_FOUND, NO_MESSAGE,
     GET_BROKER_RUNTIME_INFO, VIEW_BROKER_STATS_DATA, GET_BROKER_CONSUME_STATS,
+    AUTH_CREATE_USER, AUTH_UPDATE_USER, AUTH_DELETE_USER, AUTH_LIST_USER,
+    AUTH_CREATE_ACL, AUTH_UPDATE_ACL, AUTH_DELETE_ACL, AUTH_LIST_ACL,
+    UserInfo, AclInfo,
 };
 
 static OPAQUE_COUNTER: AtomicI32 = AtomicI32::new(1);
@@ -28,6 +33,40 @@ const ONE_DAY_MILLIS: i64 = 86_400_000;
 
 fn next_opaque() -> i32 {
     OPAQUE_COUNTER.fetch_add(1, Ordering::SeqCst)
+}
+
+/// Sign a request the way RocketMQ's AclClientRPCHook does:
+/// HMAC-SHA1 over the sorted ext-field values plus the body, base64 encoded.
+fn sign_command(
+    command: &RemotingCommand,
+    body: &[u8],
+    credentials: &Option<(String, String)>,
+) -> Result<RemotingCommand, String> {
+    let Some((access_key, secret_key)) = credentials else {
+        return Ok(command.clone());
+    };
+
+    let mut fields = command.ext_fields.clone().unwrap_or_default();
+    fields.insert("AccessKey".to_string(), access_key.clone());
+
+    let sorted: BTreeMap<String, String> = fields.clone().into_iter().collect();
+    let mut content = String::new();
+    for value in sorted.values() {
+        content.push_str(value);
+    }
+
+    let mut data = content.into_bytes();
+    data.extend_from_slice(body);
+
+    let mut mac = Hmac::<Sha1>::new_from_slice(secret_key.as_bytes())
+        .map_err(|e| format!("Init ACL signature failed: {}", e))?;
+    mac.update(&data);
+    let signature = general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+
+    fields.insert("Signature".to_string(), signature);
+    let mut signed = command.clone();
+    signed.ext_fields = Some(fields);
+    Ok(signed)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,9 +133,24 @@ pub struct ConsumerProgress {
     pub lag: i64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BrokerAclUsers {
+    pub broker_addr: String,
+    pub users: Vec<UserInfo>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BrokerAclRules {
+    pub broker_addr: String,
+    pub rules: Vec<AclInfo>,
+    pub error: Option<String>,
+}
+
 pub struct RocketMQClient {
     name_server_addrs: Vec<String>,
     current_addr_index: usize,
+    credentials: Option<(String, String)>,
     group_count_cache: std::sync::Mutex<Option<(std::time::Instant, u32)>>,
 }
 
@@ -106,9 +160,19 @@ impl RocketMQClient {
             return Err("NameServer address list cannot be empty".to_string());
         }
 
+        let credentials = match (config.access_key, config.secret_key) {
+            (Some(access_key), Some(secret_key))
+                if !access_key.is_empty() && !secret_key.is_empty() =>
+            {
+                Some((access_key, secret_key))
+            }
+            _ => None,
+        };
+
         Ok(Self {
             name_server_addrs: config.name_server_addrs,
             current_addr_index: 0,
+            credentials,
             group_count_cache: std::sync::Mutex::new(None),
         })
     }
@@ -118,6 +182,11 @@ impl RocketMQClient {
     }
 
     fn send_command_to(&self, addr: &str, command: &RemotingCommand) -> Result<(RemotingCommand, Vec<u8>), String> {
+        self.send_raw_to(addr, command, &[])
+    }
+
+    fn send_raw_to(&self, addr: &str, command: &RemotingCommand, body: &[u8]) -> Result<(RemotingCommand, Vec<u8>), String> {
+        let signed = sign_command(command, body, &self.credentials)?;
         let mut stream = TcpStream::connect_timeout(
             &addr.parse().map_err(|e| format!("Parse address failed: {}", e))?,
             Duration::from_secs(5),
@@ -130,7 +199,7 @@ impl RocketMQClient {
             .set_write_timeout(Some(Duration::from_secs(5)))
             .map_err(|e| format!("Set write timeout failed: {}", e))?;
 
-        let request_data = command.encode()?;
+        let request_data = signed.encode_with_body(body)?;
         stream
             .write_all(&request_data)
             .map_err(|e| format!("Send request failed: {}", e))?;
@@ -1070,6 +1139,258 @@ impl RocketMQClient {
             .map_err(|e| format!("Parse broker consume stats failed: {}", e))
     }
 
+    fn master_broker_addrs(&self) -> Result<Vec<String>, String> {
+        let command = RemotingCommand::new_request(GET_BROKER_CLUSTER_INFO, next_opaque());
+        let (response, body) = self.send_command(&command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Get cluster info failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+        if body.is_empty() {
+            return Err("Empty cluster info response".to_string());
+        }
+
+        let cluster: ClusterInfoResponse = parse_json_normalized(&body)
+            .map_err(|e| format!("Parse cluster info failed: {}", e))?;
+        let mut addrs: Vec<String> = cluster
+            .broker_addr_table
+            .values()
+            .filter_map(|broker| broker.broker_addrs.get(&0).cloned())
+            .collect();
+        addrs.sort();
+        addrs.dedup();
+
+        if addrs.is_empty() {
+            return Err("No master broker found".to_string());
+        }
+        Ok(addrs)
+    }
+
+    fn fan_out_to_masters<F>(&self, mut operation: F) -> Result<(), String>
+    where
+        F: FnMut(&str) -> Result<(), String>,
+    {
+        let addrs = self.master_broker_addrs()?;
+        let mut failures = Vec::new();
+        let mut succeeded = 0;
+
+        for addr in &addrs {
+            match operation(addr) {
+                Ok(()) => succeeded += 1,
+                Err(e) => failures.push(format!("{}: {}", addr, e)),
+            }
+        }
+
+        if failures.is_empty() {
+            Ok(())
+        } else if succeeded == 0 {
+            Err(failures.join("; "))
+        } else {
+            Err(format!(
+                "Applied to {} of {} brokers; failed: {}",
+                succeeded,
+                addrs.len(),
+                failures.join("; ")
+            ))
+        }
+    }
+
+    fn broker_acl_users(&self, addr: &str, filter: &str) -> Result<Vec<UserInfo>, String> {
+        let mut ext = HashMap::new();
+        ext.insert("filter".to_string(), filter.to_string());
+        let command =
+            RemotingCommand::new_request(AUTH_LIST_USER, next_opaque()).with_ext_fields(ext);
+        let (response, body) = self.send_command_to(addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "List ACL users failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+        if body.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        serde_json::from_slice(&body).map_err(|e| format!("Parse ACL users failed: {}", e))
+    }
+
+    pub fn list_acl_users(&self, filter: &str) -> Result<Vec<BrokerAclUsers>, String> {
+        let addrs = self.master_broker_addrs()?;
+        let mut results = Vec::new();
+
+        for addr in addrs {
+            match self.broker_acl_users(&addr, filter) {
+                Ok(users) => results.push(BrokerAclUsers {
+                    broker_addr: addr,
+                    users,
+                    error: None,
+                }),
+                Err(e) => results.push(BrokerAclUsers {
+                    broker_addr: addr,
+                    users: Vec::new(),
+                    error: Some(e),
+                }),
+            }
+        }
+
+        Ok(results)
+    }
+
+    fn send_acl_user(&self, code: i32, user: &UserInfo) -> Result<(), String> {
+        let body = serde_json::to_vec(user)
+            .map_err(|e| format!("Encode ACL user failed: {}", e))?;
+        let username = user.username.clone();
+
+        self.fan_out_to_masters(move |addr| {
+            let mut ext = HashMap::new();
+            ext.insert("username".to_string(), username.clone());
+            let command = RemotingCommand::new_request(code, next_opaque()).with_ext_fields(ext);
+            let (response, _) = self.send_raw_to(addr, &command, &body)?;
+
+            if response.code != SUCCESS {
+                return Err(format!(
+                    "Save ACL user failed: code={}, remark={:?}",
+                    response.code, response.remark
+                ));
+            }
+            Ok(())
+        })
+    }
+
+    pub fn create_acl_user(&self, user: &UserInfo) -> Result<(), String> {
+        self.send_acl_user(AUTH_CREATE_USER, user)
+    }
+
+    pub fn update_acl_user(&self, user: &UserInfo) -> Result<(), String> {
+        self.send_acl_user(AUTH_UPDATE_USER, user)
+    }
+
+    pub fn delete_acl_user(&self, username: &str) -> Result<(), String> {
+        let username = username.to_string();
+
+        self.fan_out_to_masters(move |addr| {
+            let mut ext = HashMap::new();
+            ext.insert("username".to_string(), username.clone());
+            let command =
+                RemotingCommand::new_request(AUTH_DELETE_USER, next_opaque()).with_ext_fields(ext);
+            let (response, _) = self.send_command_to(addr, &command)?;
+
+            if response.code != SUCCESS {
+                return Err(format!(
+                    "Delete ACL user failed: code={}, remark={:?}",
+                    response.code, response.remark
+                ));
+            }
+            Ok(())
+        })
+    }
+
+    fn broker_acl_rules(
+        &self,
+        addr: &str,
+        subject: &str,
+        resource: &str,
+    ) -> Result<Vec<AclInfo>, String> {
+        let mut ext = HashMap::new();
+        ext.insert("subjectFilter".to_string(), subject.to_string());
+        ext.insert("resourceFilter".to_string(), resource.to_string());
+        let command =
+            RemotingCommand::new_request(AUTH_LIST_ACL, next_opaque()).with_ext_fields(ext);
+        let (response, body) = self.send_command_to(addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "List ACL rules failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+        if body.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        serde_json::from_slice(&body).map_err(|e| format!("Parse ACL rules failed: {}", e))
+    }
+
+    pub fn list_acl_rules(
+        &self,
+        subject: &str,
+        resource: &str,
+    ) -> Result<Vec<BrokerAclRules>, String> {
+        let addrs = self.master_broker_addrs()?;
+        let mut results = Vec::new();
+
+        for addr in addrs {
+            match self.broker_acl_rules(&addr, subject, resource) {
+                Ok(rules) => results.push(BrokerAclRules {
+                    broker_addr: addr,
+                    rules,
+                    error: None,
+                }),
+                Err(e) => results.push(BrokerAclRules {
+                    broker_addr: addr,
+                    rules: Vec::new(),
+                    error: Some(e),
+                }),
+            }
+        }
+
+        Ok(results)
+    }
+
+    fn send_acl_rule(&self, code: i32, acl: &AclInfo) -> Result<(), String> {
+        let body = serde_json::to_vec(acl)
+            .map_err(|e| format!("Encode ACL rule failed: {}", e))?;
+        let subject = acl.subject.clone();
+
+        self.fan_out_to_masters(move |addr| {
+            let mut ext = HashMap::new();
+            ext.insert("subject".to_string(), subject.clone());
+            let command = RemotingCommand::new_request(code, next_opaque()).with_ext_fields(ext);
+            let (response, _) = self.send_raw_to(addr, &command, &body)?;
+
+            if response.code != SUCCESS {
+                return Err(format!(
+                    "Save ACL rule failed: code={}, remark={:?}",
+                    response.code, response.remark
+                ));
+            }
+            Ok(())
+        })
+    }
+
+    pub fn create_acl_rule(&self, acl: &AclInfo) -> Result<(), String> {
+        self.send_acl_rule(AUTH_CREATE_ACL, acl)
+    }
+
+    pub fn update_acl_rule(&self, acl: &AclInfo) -> Result<(), String> {
+        self.send_acl_rule(AUTH_UPDATE_ACL, acl)
+    }
+
+    pub fn delete_acl_rule(&self, subject: &str, resource: &str) -> Result<(), String> {
+        let subject = subject.to_string();
+        let resource = resource.to_string();
+
+        self.fan_out_to_masters(move |addr| {
+            let mut ext = HashMap::new();
+            ext.insert("subject".to_string(), subject.clone());
+            ext.insert("resource".to_string(), resource.clone());
+            let command =
+                RemotingCommand::new_request(AUTH_DELETE_ACL, next_opaque()).with_ext_fields(ext);
+            let (response, _) = self.send_command_to(addr, &command)?;
+
+            if response.code != SUCCESS {
+                return Err(format!(
+                    "Delete ACL rule failed: code={}, remark={:?}",
+                    response.code, response.remark
+                ));
+            }
+            Ok(())
+        })
+    }
 }
 
 fn parse_first_f64(raw: Option<&String>) -> f64 {

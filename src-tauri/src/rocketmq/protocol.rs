@@ -11,6 +11,16 @@ pub const SEARCH_OFFSET_BY_TIMESTAMP: i32 = 29;
 pub const UPDATE_AND_CREATE_TOPIC: i32 = 17;
 pub const DELETE_TOPIC_IN_NAMESRV: i32 = 216;
 pub const DELETE_TOPIC_IN_BROKER: i32 = 215;
+
+// ACL 2.0 request codes (RocketMQ 5.3+)
+pub const AUTH_CREATE_USER: i32 = 3001;
+pub const AUTH_UPDATE_USER: i32 = 3002;
+pub const AUTH_DELETE_USER: i32 = 3003;
+pub const AUTH_LIST_USER: i32 = 3005;
+pub const AUTH_CREATE_ACL: i32 = 3006;
+pub const AUTH_UPDATE_ACL: i32 = 3007;
+pub const AUTH_DELETE_ACL: i32 = 3008;
+pub const AUTH_LIST_ACL: i32 = 3010;
 pub const GET_BROKER_RUNTIME_INFO: i32 = 28;
 pub const VIEW_BROKER_STATS_DATA: i32 = 107;
 pub const GET_BROKER_CONSUME_STATS: i32 = 109;
@@ -71,32 +81,35 @@ impl RemotingCommand {
         self
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, String> {
+    pub fn encode_with_body(&self, body: &[u8]) -> Result<Vec<u8>, String> {
         let header_json = serde_json::to_string(self)
             .map_err(|e| format!("Serialize header failed: {}", e))?;
         let header_bytes = header_json.as_bytes();
-        
+
         // Protocol format:
-        // 4 bytes: total length (header length marker + header)
+        // 4 bytes: total length (header length marker + header + body)
         // 4 bytes: header length (with serialization type in high byte)
         // N bytes: header JSON
-        // M bytes: body (empty for most requests)
-        
+        // M bytes: body
+
         let header_len = header_bytes.len() as i32;
-        let total_len = 4 + header_len; // 4 for header length marker
-        
-        let mut buffer = Vec::new();
-        
+        let total_len = 4 + header_len + body.len() as i32;
+
+        let mut buffer = Vec::with_capacity(total_len as usize + 4);
+
         // Total length (big endian)
         buffer.extend_from_slice(&total_len.to_be_bytes());
-        
+
         // Header length with serialization type (0 = JSON in high byte)
         let header_len_with_type = header_len | (0 << 24);
         buffer.extend_from_slice(&header_len_with_type.to_be_bytes());
-        
+
         // Header
         buffer.extend_from_slice(header_bytes);
-        
+
+        // Body
+        buffer.extend_from_slice(body);
+
         Ok(buffer)
     }
 
@@ -265,4 +278,44 @@ pub struct TraceRecord {
     pub nodes: Vec<TraceNode>,
     #[serde(default)]
     pub consumer_status: Vec<ConsumerStatus>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UserInfo {
+    #[serde(default)]
+    pub username: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    #[serde(rename = "userType", default, skip_serializing_if = "Option::is_none")]
+    pub user_type: Option<String>,
+    #[serde(rename = "userStatus", default, skip_serializing_if = "Option::is_none")]
+    pub user_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AclInfo {
+    #[serde(default)]
+    pub subject: String,
+    #[serde(default)]
+    pub policies: Vec<PolicyInfo>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PolicyInfo {
+    #[serde(rename = "policyType", default, skip_serializing_if = "Option::is_none")]
+    pub policy_type: Option<String>,
+    #[serde(default)]
+    pub entries: Vec<PolicyEntryInfo>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PolicyEntryInfo {
+    #[serde(default)]
+    pub resource: String,
+    #[serde(default)]
+    pub actions: Vec<String>,
+    #[serde(rename = "sourceIps", default)]
+    pub source_ips: Vec<String>,
+    #[serde(default)]
+    pub decision: String,
 }

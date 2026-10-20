@@ -100,3 +100,39 @@ export interface TraceRecord {
   nodes: TraceNode[]
   consumerStatus: ConsumerStatus[]
 }
+
+export interface AclUserInfo {
+  username: string
+  password?: string | null
+  userType?: string | null
+  userStatus?: string | null
+}
+
+export interface PolicyEntryInfo {
+  resource: string
+  actions: string[]
+  sourceIps: string[]
+  decision: string
+}
+
+export interface PolicyInfo {
+  policyType?: string | null
+  entries: PolicyEntryInfo[]
+}
+
+export interface AclInfo {
+  subject: string
+  policies: PolicyInfo[]
+}
+
+export interface BrokerAclUsers {
+  broker_addr: string
+  users: AclUserInfo[]
+  error?: string | null
+}
+
+export interface BrokerAclRules {
+  broker_addr: string
+  rules: AclInfo[]
+  error?: string | null
+}
