@@ -56,3 +56,27 @@ export interface TopicRouteData {
   queueDatas: QueueData[]
   brokerDatas: TopicBrokerData[]
 }
+
+export interface ConsumerConnectionInfo {
+  clientId: string
+  clientAddr: string
+  language: string
+  version: number
+}
+
+export interface ConsumerConnection {
+  connectionSet: ConsumerConnectionInfo[]
+  subscriptionTable: Record<string, unknown>
+  consumeType?: string | null
+  messageModel?: string | null
+  consumeFromWhere?: string | null
+}
+
+export interface ConsumerProgress {
+  topic: string
+  brokerName: string
+  queueId: number
+  brokerOffset: number
+  consumerOffset: number
+  lag: number
+}

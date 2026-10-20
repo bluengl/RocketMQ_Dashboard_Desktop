@@ -1,7 +1,7 @@
 pub mod client;
 pub mod protocol;
 
-pub use client::{ClusterInfo, ConnectionConfig, RocketMQClient};
+pub use client::{ClusterInfo, ConnectionConfig, ConsumerProgress, RocketMQClient};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

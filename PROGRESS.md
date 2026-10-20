@@ -1,6 +1,6 @@
 # RocketMQ Dashboard 桌面版 - 开发进度
 
-> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理（路由查看/新建/删除）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ## 项目概述
 基于 Tauri 2 + React 18 + TypeScript 的 RocketMQ 管理控制台桌面应用
@@ -75,21 +75,21 @@
 
 ## 进行中功能
 
-### 🔄 6. Consumer 管理（90%）
-- [x] Rust 后端命令实现
-- [ ] 前端 UI 实现
-- [ ] 数据展示和交互
+### ✅ 6. Consumer 管理（100%）
+- [x] 消费者组列表（按 Broker 聚合订阅组配置）
+- [x] 消费进度查询（按队列展示 broker offset / consumer offset / lag）
+- [x] 在线实例列表
+- [x] 重置消费位点（最新 / 最早 / 指定 offset，支持单队列或全部队列）
+- [x] 前端详情页（在线状态、汇总卡片、进度表、连接表、重置弹窗）
 
-**已实现的协议**:
-- `GET_ALL_CONSUMER_GROUP` (Code: 200)
-- `QUERY_CONSUMER_OFFSET` (Code: 14) - 查询消费进度
-- `GET_CONSUMER_CONNECTION_LIST` (Code: 204) - 查询在线客户端
+**已实现并实测确认的协议**:
+- `GET_ALL_SUBSCRIPTIONGROUP_CONFIG` (Code: 201) - 消费组枚举（发送到 Broker）
+- `GET_CONSUMER_CONNECTION_LIST` (Code: 203) - 在线客户端；返回 206 表示组未在线
+- `QUERY_CONSUMER_OFFSET` (Code: 14) - 消费位点，需 queueId，offset 在响应头
+- `UPDATE_CONSUMER_OFFSET` (Code: 15) - 重置位点，extFields 使用 `commitOffset`
+- `GET_MAX_OFFSET` / `GET_MIN_OFFSET` (Code: 30 / 31) - broker 位点，offset 在响应头
 
-**待完成**:
-- 前端调用 Tauri 命令
-- 消费者组列表展示
-- 消费进度详情展示
-- 在线实例列表展示
+> 注：200 是 `UPDATE_AND_CREATE_SUBSCRIPTIONGROUP`（不是消费组列表），204 是 `GET_CONSUMER_RUNNING_INFO`（不是连接列表）；此前代码中的用法已修正。
 
 ## 待实现功能
 
@@ -185,29 +185,21 @@ rocketmqMg/
 
 ## 下一步计划
 
-1. **完成 Consumer 前端 UI** (优先级：高)
-   - 实现消费者组列表展示
-   - 实现消费进度查询
-   - 实现在线实例查看
+1. **Cluster + Dashboard 完善** (阶段 4，优先级：高)
+   - Broker 运行时信息与统计数据
+   - Dashboard TPS / 消息量趋势图
 
-2. **实现 Message 查询** (优先级：高)
-   - 实现消息查询协议
-   - 前后端集成
-   - 消息详情展示
+2. **Producer 查询** (阶段 5)
+   - 需先核实 RocketMQ 5.x Producer 查询请求码
 
-3. **完善 Dashboard** (优先级：中)
-   - 实时 TPS 统计
-   - 消息堆积监控
-   - 集群健康度
+3. **Message Trace** (阶段 6)
+   - 需先核实轨迹查询请求码
 
-4. **实现运维工具** (优先级：中)
-   - 重置消费位点
-   - 发送测试消息
+4. **ACL 权限管理** (阶段 7)
+   - 需先核实 ACL 相关请求码
 
-5. **测试和优化** (优先级：中)
-   - 大数据量场景测试
-   - 性能优化
-   - 错误处理完善
+5. **OPS + 多集群 + 打包** (阶段 8)
+   - 多集群切换、大数据量分页、错误分类、打包发布
 
 ## 已知问题
 

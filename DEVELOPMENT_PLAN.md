@@ -10,17 +10,15 @@
 
 | 状态 | 内容 |
 |------|------|
-| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 名称列表 |
-| ⚠️ 有 bug / 未接线 | Consumer（列表/进度/连接）：后端命令读托管 `State`（恒 `None`），前端仅接线了组列表 |
-| ❌ 缺失 | Message、Message Trace、Producer、ACL、OPS；Topic/Consumer 的运维操作；Dashboard/Cluster 的统计与拓扑 |
+| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点 |
+| ❌ 缺失 | Message Trace、Producer、ACL、OPS；Dashboard/Cluster 的统计与拓扑 |
 
-**关键已确认 bug**
-1. `consumer.rs` 三个命令读 `State<Mutex<Option<RocketMQClient>>>`，但 `connect_cluster` 写的是静态 `GLOBAL_CLIENT`，两者不相通 → Consumers 页永远 "Not connected"。
-2. `App.tsx:292` 的 fallback 未排除 `consumers`，导致 Consumers 页叠加渲染 "Coming soon"。
-3. `protocol.rs` 中 `GET_ROUTEINTO_BY_TOPIC` 拼写错误（应为 `GET_ROUTEINFO_BY_TOPIC`），且该常量未被使用。
-4. 前端存在死代码：`src/pages/ConsumersPage.tsx`（未引用）、`src/hooks/useRocketMQ.ts`（引用不存在的 `test_connection`/`list_brokers` 命令）、`src/types/index.ts`（形状与 `App.tsx` 内联接口不一致）。
-5. 版本号不一致：`package.json`/`Cargo.toml`/`tauri.conf.json` 为 `1.0.0`，文档为 `0.3.0-alpha`。
-6. 当前目录不是 git 仓库（有 `.gitignore` 但未 `git init`）。
+**阶段 0–3 已修复的历史 bug**
+1. `consumer.rs` 曾读取托管 `State`（恒 `None`），与 `connect_cluster` 写入的 `GLOBAL_CLIENT` 不相通；已统一为 `GLOBAL_CLIENT`。
+2. `App.tsx` fallback 未排除已实现页面导致 "Coming soon" 叠加；已改为显式排除。
+3. `protocol.rs` 中 `GET_ROUTEINTO_BY_TOPIC` 拼写错误；已修正为 `GET_ROUTEINFO_BY_TOPIC`。
+4. 前端死代码（未引用的 `src/pages/ConsumersPage.tsx`、`src/hooks/useRocketMQ.ts`、`src/types/index.ts` 重复接口）已清理。
+5. 版本号与目录 git 仓库问题已解决。
 
 ---
 
@@ -94,20 +92,25 @@
 
 ---
 
-## 阶段 3：Consumer 管理完善（预计 3–4 天）
+## 阶段 3：Consumer 管理完善（已完成，2026-10-20）
 
-### 后端
-- 消费进度：`QUERY_CONSUMER_OFFSET`（14）按 topic 查各队列 offset 与 lag。
-- 在线实例：`GET_CONSUMER_CONNECTION_LIST`（**待核实请求码**，当前硬编码 204，可能是 203）。
-- 消费组列表来源：**待核实**（当前硬编码 200，需确认 rocketmq-dashboard 如何枚举 consumer group，可能需连 Broker 而非 NameServer）。
-- 重置消费位点：`UPDATE_CONSUMER_OFFSET`（15）或 5.x 的 `RESET_CONSUMER_CLIENT_OFFSET`（**待核实**）。
+### 后端（已实现）
+- 消费组枚举：`GET_ALL_SUBSCRIPTIONGROUP_CONFIG`（201，发送到每个 Broker 并聚合）。
+- 在线实例：`GET_CONSUMER_CONNECTION_LIST`（203）；返回 206 表示该组未在线。
+- 消费进度：`QUERY_CONSUMER_OFFSET`（14，需 `queueId`）+ `GET_MAX_OFFSET`（30）逐队列计算 lag。
+- 重置位点：`UPDATE_CONSUMER_OFFSET`（15，extFields 为 `commitOffset`），支持最新/最早/指定值、单队列/全部队列。
+- 新命令：`get_consumer_groups`、`get_consumer_connections`、`get_consumer_progress`、`reset_consumer_offset`。
 
-### 前端（`src/ConsumersPage.tsx` 扩展）
-- Consumer 详情页（进度表、客户端连接列表、重置 offset）。
-- 消费 TPS / 堆积汇总卡片。
+### 前端（已实现）
+- Consumers 页：组列表 + 搜索、在线状态、Consume Type / Message Model、汇总卡片（实例数/队列数/总 lag）。
+- 进度表（Broker / Queue / Broker Offset / Consumer Offset / Lag），支持选择 Topic 与手动刷新。
+- 在线连接表（Client ID / 地址 / 语言 / 版本）；离线组支持手动选择 Topic 查看已提交位点。
+- 重置位点弹窗（Topic、队列、目标位点、二次确认提示）。
 
-### 验收标准
-- 选中消费组后能看到消费进度、在线实例，并能重置位点。
+### 验证
+- 用 Python 探测脚本对测试集群（4.7.7）实测确认请求码与响应结构。
+- `cargo check`、`tsc --noEmit`、`npm run build` 全部通过。
+- 注意：测试集群当前没有在线消费者，因此 203 成功分支的完整客户端列表未在真实环境观察到；协议结构按 RocketMQ 标准响应实现。
 
 ---
 
@@ -165,23 +168,24 @@
 | SEARCH_OFFSET_BY_TIMESTAMP | 29 | ✅ 已确认 |
 | GET_MIN_OFFSET / GET_MAX_OFFSET | 31 / 30 | ✅ 已确认 |
 | GET_EARLIEST_MSG_STORETIME | 32 | ✅ 已确认 |
-| QUERY_CONSUMER_OFFSET | 14 | ✅ 已确认（当前 consumer.rs 已用） |
-| UPDATE_CONSUMER_OFFSET | 15 | ✅ 已确认 |
-| QUERY_BROKER_OFFSET | 13 | ✅ 已确认 |
+| QUERY_CONSUMER_OFFSET | 14 | ✅ 已确认（需 queueId，offset 在响应头） |
+| UPDATE_CONSUMER_OFFSET | 15 | ✅ 已确认（extFields 用 `commitOffset`） |
+| QUERY_BROKER_OFFSET | 13 | ❌ 4.7.7 Broker 不支持；改用 30/31 逐队列查询 |
 | UPDATE_AND_CREATE_TOPIC | 17 | ✅ 已确认 |
 | GET_BROKER_RUNTIME_INFO | 28 | ✅ 已确认 |
 | GET_CONSUMER_LIST_BY_GROUP | 38 | ✅ 已确认 |
 | DELETE_TOPIC_IN_NAMESRV | 216 | ✅ 已确认 |
 | VIEW_BROKER_STATS_DATA | 107 | ✅ 已确认 |
-| GET_BROKER_CONSUME_STATS | 109 | ✅ 已确认 |
-| GET_ALL_CONSUMER_GROUP | 200 | ⚠️ 待核实（当前 consumer.rs 硬编码，来源不明） |
-| GET_CONSUMER_CONNECTION_LIST | 203 或 204 | ⚠️ 待核实（当前硬编码 204） |
-| GET_CONSUMER_RUNNING_INFO | 200 或 204 | ⚠️ 待核实 |
+| GET_BROKER_CONSUME_STATS | 109 | ⚠️ 4.7.7 不支持（code=3），5.x 再验证 |
+| GET_ALL_SUBSCRIPTIONGROUP_CONFIG | 201 | ✅ 已实测（消费组枚举入口，发送到 Broker） |
+| GET_CONSUMER_CONNECTION_LIST | 203 | ✅ 已实测（返回 206 表示组未在线） |
+| GET_CONSUMER_RUNNING_INFO | 204 | ✅ 已确认（不是连接列表） |
 | QUERY_MESSAGE_TRACE_BY_ID | ? | ⚠️ 待核实 |
 | Producer 查询 | ? | ⚠️ 待核实 |
 | ACL 相关 | ? | ⚠️ 待核实 |
 
-> 待核实项在对应阶段开始时，对照 [rocketmq-dashboard 源码](https://github.com/apache/rocketmq-dashboard) 的 Controller 与 RocketMQ `RequestCode.java` 确认准确值。
+> 阶段 3 已用探测脚本对 4.7.7 测试集群逐项实测；剩余待核实项在对应阶段开始时再确认。
+> 注意：200 是 `UPDATE_AND_CREATE_SUBSCRIPTIONGROUP`，不能用于枚举消费组。
 
 ---
 

@@ -7,12 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Consumer management (phase 3)**
+  - Consumer group enumeration via `GET_ALL_SUBSCRIPTIONGROUP_CONFIG` (201)
+  - Online connections list with client id, address, language and version
+  - Per-queue consume progress (broker offset / consumer offset / lag)
+  - Offset reset to latest, earliest or a custom value, for one queue or all queues
+
+### Fixed
+- Consumer group listing used request code 200 (`UPDATE_AND_CREATE_SUBSCRIPTIONGROUP`); corrected to 201
+- Connection list used request code 204 (`GET_CONSUMER_RUNNING_INFO`); corrected to 203
+- `QUERY_CONSUMER_OFFSET` now sends `queueId` and reads the offset from the response header
+
 ### Planned
-- Message query (by ID / Key / Offset)
 - Real-time monitoring dashboard (TPS / Message lag / Cluster health)
-- Operation tools (Reset offset / Send test message)
-- ACL permission management
-- Message trace query
+- Producer query, message trace, ACL permission management
 
 ## [0.3.0-alpha] - 2026-10-20
 

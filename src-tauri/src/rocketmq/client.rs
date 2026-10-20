@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
@@ -7,9 +7,12 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 use super::protocol::{
     RemotingCommand, ClusterInfoResponse, TopicListResponse, TopicRouteData, MessageExt,
+    SubscriptionGroupListResponse, ConsumerConnection,
     GET_BROKER_CLUSTER_INFO, GET_ALL_TOPIC_LIST_FROM_NAMESERVER, GET_ROUTEINFO_BY_TOPIC,
     QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SEARCH_OFFSET_BY_TIMESTAMP, UPDATE_AND_CREATE_TOPIC,
     DELETE_TOPIC_IN_NAMESRV, DELETE_TOPIC_IN_BROKER, SUCCESS,
+    GET_ALL_SUBSCRIPTIONGROUP_CONFIG, GET_CONSUMER_CONNECTION_LIST, QUERY_CONSUMER_OFFSET,
+    UPDATE_CONSUMER_OFFSET, GET_MAX_OFFSET, GET_MIN_OFFSET,
 };
 
 static OPAQUE_COUNTER: AtomicI32 = AtomicI32::new(1);
@@ -40,6 +43,17 @@ pub struct ClusterInfo {
     pub brokers: Vec<BrokerInfo>,
     pub total_topics: u32,
     pub total_groups: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerProgress {
+    pub topic: String,
+    pub broker_name: String,
+    pub queue_id: i32,
+    pub broker_offset: i64,
+    pub consumer_offset: i64,
+    pub lag: i64,
 }
 
 pub struct RocketMQClient {
@@ -388,6 +402,291 @@ impl RocketMQClient {
         }
 
         Ok(())
+    }
+
+    fn broker_master_addrs(&self) -> Result<Vec<String>, String> {
+        let command = RemotingCommand::new_request(GET_BROKER_CLUSTER_INFO, next_opaque());
+        let (response, body) = self.send_command(&command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Get broker list failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        let info: ClusterInfoResponse = parse_json_normalized(&body)
+            .map_err(|e| format!("Parse broker list failed: {}", e))?;
+
+        Ok(info
+            .broker_addr_table
+            .values()
+            .filter_map(|b| b.broker_addrs.get(&0).cloned())
+            .collect())
+    }
+
+    pub fn get_consumer_groups(&self) -> Result<Vec<String>, String> {
+        let addrs = self.broker_master_addrs()?;
+        let mut groups = BTreeSet::new();
+        let mut succeeded = false;
+        let mut last_error = None;
+
+        for addr in &addrs {
+            let command = RemotingCommand::new_request(GET_ALL_SUBSCRIPTIONGROUP_CONFIG, next_opaque());
+            match self.send_command_to(addr, &command) {
+                Ok((response, body)) if response.code == SUCCESS => {
+                    match parse_json_normalized::<SubscriptionGroupListResponse>(&body) {
+                        Ok(parsed) => {
+                            groups.extend(parsed.subscription_group_table.into_keys());
+                            succeeded = true;
+                        }
+                        Err(e) => last_error = Some(format!("{}: {}", addr, e)),
+                    }
+                }
+                Ok((response, _)) => {
+                    last_error = Some(format!(
+                        "{}: code={}, remark={:?}",
+                        addr, response.code, response.remark
+                    ));
+                }
+                Err(e) => last_error = Some(format!("{}: {}", addr, e)),
+            }
+        }
+
+        if !succeeded {
+            return Err(last_error.unwrap_or_else(|| "No broker available".to_string()));
+        }
+
+        Ok(groups.into_iter().collect())
+    }
+
+    pub fn get_consumer_connections(
+        &self,
+        group: &str,
+    ) -> Result<Option<ConsumerConnection>, String> {
+        let addrs = self.broker_master_addrs()?;
+        let mut aggregate = ConsumerConnection::default();
+        let mut online = false;
+        let mut responded = false;
+        let mut last_error = None;
+
+        for addr in &addrs {
+            let mut ext = HashMap::new();
+            ext.insert("consumerGroup".to_string(), group.to_string());
+            let command = RemotingCommand::new_request(GET_CONSUMER_CONNECTION_LIST, next_opaque())
+                .with_ext_fields(ext);
+
+            match self.send_command_to(addr, &command) {
+                Ok((response, _)) if response.code != SUCCESS => {
+                    // 206 means the group is not online on this broker
+                    responded = true;
+                }
+                Ok((_, body)) if body.is_empty() => {
+                    responded = true;
+                    online = true;
+                }
+                Ok((_, body)) => {
+                    responded = true;
+                    let parsed: ConsumerConnection = serde_json::from_slice(&body)
+                        .map_err(|e| format!("Parse consumer connection failed: {}", e))?;
+                    online = true;
+                    aggregate.connection_set.extend(parsed.connection_set);
+                    aggregate.subscription_table.extend(parsed.subscription_table);
+                    if aggregate.consume_type.is_none() {
+                        aggregate.consume_type = parsed.consume_type;
+                    }
+                    if aggregate.message_model.is_none() {
+                        aggregate.message_model = parsed.message_model;
+                    }
+                    if aggregate.consume_from_where.is_none() {
+                        aggregate.consume_from_where = parsed.consume_from_where;
+                    }
+                }
+                Err(e) => last_error = Some(format!("{}: {}", addr, e)),
+            }
+        }
+
+        if !responded {
+            return Err(last_error.unwrap_or_else(|| "No broker available".to_string()));
+        }
+
+        Ok(if online { Some(aggregate) } else { None })
+    }
+
+    fn read_offset(
+        &self,
+        addr: &str,
+        request_code: i32,
+        ext: HashMap<String, String>,
+    ) -> Result<i64, String> {
+        let command = RemotingCommand::new_request(request_code, next_opaque()).with_ext_fields(ext);
+        let (response, _) = self.send_command_to(addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Read offset failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        response
+            .ext_fields
+            .as_ref()
+            .and_then(|f| f.get("offset"))
+            .and_then(|s| s.parse::<i64>().ok())
+            .ok_or_else(|| "No offset in response".to_string())
+    }
+
+    fn max_offset(&self, addr: &str, topic: &str, queue_id: i32) -> Result<i64, String> {
+        let mut ext = HashMap::new();
+        ext.insert("topic".to_string(), topic.to_string());
+        ext.insert("queueId".to_string(), queue_id.to_string());
+        self.read_offset(addr, GET_MAX_OFFSET, ext)
+    }
+
+    fn min_offset(&self, addr: &str, topic: &str, queue_id: i32) -> Result<i64, String> {
+        let mut ext = HashMap::new();
+        ext.insert("topic".to_string(), topic.to_string());
+        ext.insert("queueId".to_string(), queue_id.to_string());
+        self.read_offset(addr, GET_MIN_OFFSET, ext)
+    }
+
+    fn consumer_offset(
+        &self,
+        addr: &str,
+        group: &str,
+        topic: &str,
+        queue_id: i32,
+    ) -> Result<i64, String> {
+        let mut ext = HashMap::new();
+        ext.insert("consumerGroup".to_string(), group.to_string());
+        ext.insert("topic".to_string(), topic.to_string());
+        ext.insert("queueId".to_string(), queue_id.to_string());
+        self.read_offset(addr, QUERY_CONSUMER_OFFSET, ext)
+    }
+
+    pub fn get_consumer_progress(
+        &self,
+        group: &str,
+        topic: Option<&str>,
+    ) -> Result<Vec<ConsumerProgress>, String> {
+        let topics: Vec<String> = match topic {
+            Some(t) => vec![t.to_string()],
+            None => {
+                let connection = self.get_consumer_connections(group)?.ok_or_else(|| {
+                    format!(
+                        "Consumer group '{}' is not online; please select a topic",
+                        group
+                    )
+                })?;
+                let mut topics: Vec<String> = connection.subscription_table.into_keys().collect();
+                topics.sort();
+                if topics.is_empty() {
+                    return Err(format!(
+                        "Consumer group '{}' has no subscriptions; please select a topic",
+                        group
+                    ));
+                }
+                topics
+            }
+        };
+
+        let mut rows = Vec::new();
+        for topic in topics {
+            let route = self.get_route_info_by_topic(&topic)?;
+
+            for queue_data in &route.queue_datas {
+                let addr = match route
+                    .broker_datas
+                    .iter()
+                    .find(|b| b.broker_name == queue_data.broker_name)
+                    .and_then(|b| b.broker_addrs.get(&0).cloned())
+                {
+                    Some(a) => a,
+                    None => continue,
+                };
+
+                for queue_id in 0..queue_data.read_queue_nums {
+                    let broker_offset = match self.max_offset(&addr, &topic, queue_id) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    let consumer_offset =
+                        self.consumer_offset(&addr, group, &topic, queue_id).unwrap_or(0);
+
+                    rows.push(ConsumerProgress {
+                        topic: topic.clone(),
+                        broker_name: queue_data.broker_name.clone(),
+                        queue_id,
+                        broker_offset,
+                        consumer_offset,
+                        lag: (broker_offset - consumer_offset).max(0),
+                    });
+                }
+            }
+        }
+
+        Ok(rows)
+    }
+
+    pub fn reset_consumer_offset(
+        &self,
+        group: &str,
+        topic: &str,
+        queue_id: Option<i32>,
+        offset_type: &str,
+        offset: Option<i64>,
+    ) -> Result<usize, String> {
+        let route = self.get_route_info_by_topic(topic)?;
+        let mut applied = 0usize;
+
+        for queue_data in &route.queue_datas {
+            let addr = match route
+                .broker_datas
+                .iter()
+                .find(|b| b.broker_name == queue_data.broker_name)
+                .and_then(|b| b.broker_addrs.get(&0).cloned())
+            {
+                Some(a) => a,
+                None => continue,
+            };
+
+            let queue_ids: Vec<i32> = match queue_id {
+                Some(q) => vec![q],
+                None => (0..queue_data.read_queue_nums).collect(),
+            };
+
+            for qid in queue_ids {
+                let target = match offset_type {
+                    "max" => self.max_offset(&addr, topic, qid)?,
+                    "min" => self.min_offset(&addr, topic, qid)?,
+                    "offset" => offset.ok_or("A custom offset value is required")?,
+                    other => return Err(format!("Unknown offset type: {}", other)),
+                };
+
+                let mut ext = HashMap::new();
+                ext.insert("consumerGroup".to_string(), group.to_string());
+                ext.insert("topic".to_string(), topic.to_string());
+                ext.insert("queueId".to_string(), qid.to_string());
+                ext.insert("commitOffset".to_string(), target.to_string());
+
+                let command =
+                    RemotingCommand::new_request(UPDATE_CONSUMER_OFFSET, next_opaque())
+                        .with_ext_fields(ext);
+                let (response, _) = self.send_command_to(&addr, &command)?;
+
+                if response.code != SUCCESS {
+                    return Err(format!(
+                        "Reset offset failed: code={}, remark={:?}",
+                        response.code, response.remark
+                    ));
+                }
+
+                applied += 1;
+            }
+        }
+
+        Ok(applied)
     }
 }
 

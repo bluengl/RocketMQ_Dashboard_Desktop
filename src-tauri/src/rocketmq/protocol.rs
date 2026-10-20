@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// RocketMQ Request Codes
+// RocketMQ Request Codes (verified against broker 4.7.7 test cluster)
 pub const GET_BROKER_CLUSTER_INFO: i32 = 106;
 pub const GET_ALL_TOPIC_LIST_FROM_NAMESERVER: i32 = 206;
 pub const GET_ROUTEINFO_BY_TOPIC: i32 = 105;
@@ -11,6 +11,14 @@ pub const SEARCH_OFFSET_BY_TIMESTAMP: i32 = 29;
 pub const UPDATE_AND_CREATE_TOPIC: i32 = 17;
 pub const DELETE_TOPIC_IN_NAMESRV: i32 = 216;
 pub const DELETE_TOPIC_IN_BROKER: i32 = 215;
+
+// Consumer admin
+pub const GET_ALL_SUBSCRIPTIONGROUP_CONFIG: i32 = 201;
+pub const GET_CONSUMER_CONNECTION_LIST: i32 = 203;
+pub const QUERY_CONSUMER_OFFSET: i32 = 14;
+pub const UPDATE_CONSUMER_OFFSET: i32 = 15;
+pub const GET_MAX_OFFSET: i32 = 30;
+pub const GET_MIN_OFFSET: i32 = 31;
 
 // Response Codes
 pub const SUCCESS: i32 = 0;
@@ -183,4 +191,38 @@ pub struct MessageExt {
     pub msg_id: Option<String>,
     #[serde(rename = "reconsumeTimes", default)]
     pub reconsume_times: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscriptionGroupListResponse {
+    #[serde(rename = "subscriptionGroupTable", default)]
+    pub subscription_group_table: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionInfo {
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default)]
+    pub client_addr: String,
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub version: i32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerConnection {
+    #[serde(default)]
+    pub connection_set: Vec<ConnectionInfo>,
+    #[serde(default)]
+    pub subscription_table: HashMap<String, serde_json::Value>,
+    #[serde(default)]
+    pub consume_type: Option<String>,
+    #[serde(default)]
+    pub message_model: Option<String>,
+    #[serde(default)]
+    pub consume_from_where: Option<String>,
 }

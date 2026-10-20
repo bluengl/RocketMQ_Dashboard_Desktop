@@ -17,6 +17,7 @@ fn main() {
             commands::get_consumer_groups,
             commands::get_consumer_progress,
             commands::get_consumer_connections,
+            commands::reset_consumer_offset,
             commands::query_message_by_id,
             commands::query_message_by_key,
             commands::query_message_by_time,
