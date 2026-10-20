@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Users, RefreshCw, Search, AlertCircle, RotateCcw, Radio, List, X } from 'lucide-react'
 import type {
@@ -30,6 +30,8 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
   const [progress, setProgress] = useState<ConsumerProgress[]>([])
   const [progressLoading, setProgressLoading] = useState(false)
   const [progressError, setProgressError] = useState<string | null>(null)
+  const [tps, setTps] = useState<number | null>(null)
+  const sampleRef = useRef<{ group: string; topic: string; offset: number; time: number } | null>(null)
 
   const [showReset, setShowReset] = useState(false)
   const [resetTopic, setResetTopic] = useState('')
@@ -73,6 +75,16 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
         topic: targetTopic,
       })
       setProgress(rows)
+
+      const totalConsumerOffset = rows.reduce((sum, row) => sum + row.consumerOffset, 0)
+      const now = Date.now()
+      const sample = sampleRef.current
+      if (sample && sample.group === group && sample.topic === targetTopic) {
+        const elapsedSeconds = (now - sample.time) / 1000
+        const consumed = totalConsumerOffset - sample.offset
+        setTps(elapsedSeconds > 0 && consumed >= 0 ? consumed / elapsedSeconds : 0)
+      }
+      sampleRef.current = { group, topic: targetTopic, offset: totalConsumerOffset, time: now }
     } catch (err) {
       setProgressError(err as string)
       setProgress([])
@@ -90,6 +102,8 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
     setTopic('')
     setProgress([])
     setProgressError(null)
+    setTps(null)
+    sampleRef.current = null
 
     try {
       const result = await invoke<ConsumerConnection | null>('get_consumer_connections', { group })
@@ -114,6 +128,8 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
   const handleTopicChange = (next: string) => {
     setTopic(next)
+    setTps(null)
+    sampleRef.current = null
     if (selectedGroup && next) {
       loadProgress(selectedGroup, next)
     }
@@ -149,6 +165,8 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
       })
       setShowReset(false)
       if (resetTopic === topic) {
+        setTps(null)
+        sampleRef.current = null
         await loadProgress(selectedGroup, resetTopic)
       }
       setError(null)
@@ -161,6 +179,14 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
   }
 
   useEffect(() => {
+    if (!selectedGroup || !topic) return
+    const timer = setInterval(() => {
+      loadProgress(selectedGroup, topic)
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [selectedGroup, topic])
+
+  useEffect(() => {
     if (connected) {
       loadGroups()
       loadAllTopics()
@@ -170,6 +196,8 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
       setSelectedGroup(null)
       setConnection(null)
       setProgress([])
+      setTps(null)
+      sampleRef.current = null
     }
   }, [connected])
 
@@ -323,7 +351,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
                     <div className="bg-slate-900 rounded-lg p-3">
                       <div className="text-xs text-slate-400">Online Instances</div>
                       <div className="text-xl font-semibold text-slate-100">
@@ -341,6 +369,24 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                         {maxLag > 0 && (
                           <span className="text-xs font-normal text-slate-400 ml-2">max {maxLag.toLocaleString()}</span>
                         )}
+                      </div>
+                    </div>
+                    <div className="bg-slate-900 rounded-lg p-3">
+                      <div className="text-xs text-slate-400">Consume TPS</div>
+                      <div
+                        className={`text-xl font-semibold ${
+                          tps !== null && tps > 0 ? 'text-green-400' : 'text-slate-100'
+                        }`}
+                      >
+                        {tps === null
+                          ? '—'
+                          : tps.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                        {tps !== null && (
+                          <span className="text-xs font-normal text-slate-400 ml-1">msg/s</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate" title={topic}>
+                        {tps === null ? 'sampling…' : topic || 'no topic selected'}
                       </div>
                     </div>
                   </div>

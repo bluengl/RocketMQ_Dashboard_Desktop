@@ -102,13 +102,15 @@
 - 新命令：`get_consumer_groups`、`get_consumer_connections`、`get_consumer_progress`、`reset_consumer_offset`。
 
 ### 前端（已实现）
-- Consumers 页：组列表 + 搜索、在线状态、Consume Type / Message Model、汇总卡片（实例数/队列数/总 lag）。
+- Consumers 页：组列表 + 搜索、在线状态、Consume Type / Message Model、汇总卡片（实例数/队列数/总 lag/消费 TPS）。
+- 消费 TPS：每 5 秒轮询消费进度，用两次采样间 `Σ consumerOffset` 增量 ÷ 时间差计算（重置位点后清空基线重新采样）。
 - 进度表（Broker / Queue / Broker Offset / Consumer Offset / Lag），支持选择 Topic 与手动刷新。
 - 在线连接表（Client ID / 地址 / 语言 / 版本）；离线组支持手动选择 Topic 查看已提交位点。
 - 重置位点弹窗（Topic、队列、目标位点、二次确认提示）。
 
 ### 验证
 - 用 Python 探测脚本对测试集群（4.7.7）实测确认请求码与响应结构。
+- TPS 算法实测：模拟消费 20 条 / 2.04 秒，采样计算得 9.79 msg/s，与前端公式一致。
 - `cargo check`、`tsc --noEmit`、`npm run build` 全部通过。
 - 注意：测试集群当前没有在线消费者，因此 203 成功分支的完整客户端列表未在真实环境观察到；协议结构按 RocketMQ 标准响应实现。
 

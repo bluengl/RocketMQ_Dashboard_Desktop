@@ -81,6 +81,7 @@
 - [x] 在线实例列表
 - [x] 重置消费位点（最新 / 最早 / 指定 offset，支持单队列或全部队列）
 - [x] 前端详情页（在线状态、汇总卡片、进度表、连接表、重置弹窗）
+- [x] 消费 TPS 卡片（每 5 秒采样 consumer offset 增量计算，含自动刷新）
 
 **已实现并实测确认的协议**:
 - `GET_ALL_SUBSCRIPTIONGROUP_CONFIG` (Code: 201) - 消费组枚举（发送到 Broker）

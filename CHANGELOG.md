@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Consumer group enumeration via `GET_ALL_SUBSCRIPTIONGROUP_CONFIG` (201)
   - Online connections list with client id, address, language and version
   - Per-queue consume progress (broker offset / consumer offset / lag)
+  - Consume TPS card computed from consumer offset deltas (5s sampling)
   - Offset reset to latest, earliest or a custom value, for one queue or all queues
 
 ### Fixed
