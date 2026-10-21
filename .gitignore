@@ -23,6 +23,9 @@ src-tauri/WixTools/
 # Claude Code local settings and tooling
 .claude/
 
+# Local-only GitHub config (not part of the published repository)
+.github/
+
 # OS
 .DS_Store
 Thumbs.db
