@@ -14,7 +14,7 @@ const zhCN: Record<string, string> = {
   Connection: '连接', Protocol: '协议', Data: '数据', Error: '错误',
   Disconnected: '未连接', 'Not connected': '未连接', 'No active cluster': '暂无活动集群',
   Connect: '连接', Disconnect: '断开连接', 'Connecting...': '正在连接…', 'Disconnecting...': '正在断开…',
-  'NameServer Address': 'NameServer 地址', 'Access Key': '访问密钥', 'Secret Key': '私有密钥',
+  'NameServer Address': 'NameServer 地址', 'NameServer Address is required': '请填写 NameServer 地址', 'Access Key': '访问密钥', 'Secret Key': '私有密钥',
   'Require ACL credentials': '使用 ACL 凭据', 'Requests are signed with HMAC-SHA1': '请求使用 HMAC-SHA1 签名',
   'Dark blue theme': '暗蓝主题', 'Light gray theme': '灰白主题', Language: '语言', Theme: '主题',
   Refresh: '刷新', Brokers: 'Broker 节点', Broker: 'Broker', 'Consumer groups': '消费者组',

@@ -3,9 +3,9 @@
 基于 Tauri 2 + React 18 的现代化 Apache RocketMQ 管理控制台
 
 ![Version](https://img.shields.io/badge/版本-0.3.0--alpha-blue)
-![Tauri](https://img.shields.io/badge/Tauri-2.8-24C8DB)
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB)
 ![React](https://img.shields.io/badge/React-18-61DAFB)
-![Rust](https://img.shields.io/badge/Rust-1.82-orange)
+![Rust](https://img.shields.io/badge/Rust-stable-orange)
 
 [English](README.md) | 简体中文
 
@@ -71,7 +71,7 @@
 ### 安装
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/rocketmq-dashboard-desktop.git
+git clone <repository-url>
 cd rocketmq-dashboard-desktop
 
 # 安装依赖
@@ -96,8 +96,9 @@ npm run build:desktop
 ## 📱 使用
 
 1. **连接集群**
-   - 输入 NameServer 地址（如 `192.168.1.100:9876`）
-   - 点击"连接"按钮
+   - 输入 NameServer 地址（如 `192.168.1.100:9876`，多个地址用逗号分隔）
+   - 下拉框会列出最近成功连接过的地址，可直接选择或删除
+   - 点击“连接”按钮
 
 2. **查看集群**
    - 点击"Cluster"查看 Broker 信息
@@ -116,10 +117,11 @@ npm run build:desktop
 
 | 层级 | 技术 |
 |------|------|
-| 桌面框架 | Tauri 2.8 |
+| 桌面框架 | Tauri 2 |
 | 前端 | React 18 + TypeScript |
-| 后端 | Rust 1.82 |
+| 后端 | Rust（stable） |
 | 构建 | Vite 5 |
+| 样式 | Tailwind CSS v4 + 自定义 CSS |
 | 图标 | lucide-react |
 
 ---
@@ -129,14 +131,15 @@ npm run build:desktop
 ```
 rocketmqMg/
 ├── src/                    # React 前端
-│   ├── pages/              # 页面组件
-│   └── App.tsx             # 主应用
+│   ├── App.tsx             # 主应用（导航 / 连接 / 标题栏）
+│   ├── *Page.tsx           # 各功能页面
+│   ├── components/         # Select、ComboBox、DateTimePicker 等通用组件
+│   ├── utils/ hooks/ types/
+│   └── i18n.tsx            # 中英文文案
 ├── src-tauri/              # Rust 后端
-│   ├── commands/           # Tauri 命令
-│   └── rocketmq/           # RocketMQ 客户端
-├── PROGRESS.md             # 开发进度
-├── SUMMARY.md              # 实现总结
-└── README.md               # 项目说明
+│   ├── src/commands/       # Tauri 命令
+│   └── src/rocketmq/       # RocketMQ 客户端与协议
+└── README.md / README.zh-CN.md
 ```
 
 ---

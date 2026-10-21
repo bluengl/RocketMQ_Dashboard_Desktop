@@ -139,6 +139,17 @@ function App() {
     setConnecting(true)
     setError(null)
 
+    // Accept comma-separated NameServers, e.g. "10.0.0.1:9876,10.0.0.2:9876".
+    const nameServers = server
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+    if (nameServers.length === 0) {
+      setError(t('NameServer Address is required'))
+      setConnecting(false)
+      return false
+    }
+
     try {
       if (connected) {
         await invoke('disconnect_cluster')
@@ -146,7 +157,7 @@ function App() {
       }
       await invoke('connect_cluster', {
         config: {
-          name_server_addrs: [server],
+          name_server_addrs: nameServers,
           acl_enabled: useAcl,
           access_key: useAcl ? access : null,
           secret_key: useAcl ? secret : null,

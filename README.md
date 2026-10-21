@@ -3,10 +3,10 @@
 <div align="center">
 
 ![Version](https://img.shields.io/badge/version-0.3.0--alpha-blue)
-![Tauri](https://img.shields.io/badge/Tauri-2.8-24C8DB)
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB)
 ![React](https://img.shields.io/badge/React-18-61DAFB)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6)
-![Rust](https://img.shields.io/badge/Rust-1.82-orange)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6)
+![Rust](https://img.shields.io/badge/Rust-stable-orange)
 
 基于 Tauri 2 + React 18 的现代化 RocketMQ 管理控制台桌面应用
 
@@ -37,9 +37,10 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 ### 已实现功能
 
 #### 1. 连接管理
-- ✅ 连接/断开 NameServer
+- ✅ 连接/断开 NameServer（支持逗号分隔的多个地址）
 - ✅ 连接状态实时显示
-- ✅ 连接测试功能
+- ✅ 连接历史记录（仅保存连接成功的地址，自动去重，可手动删除）
+- ✅ 连接时自动验证 NameServer 可达性
 - ✅ 超时保护（5s 连接，10s 读取）
 
 #### 2. 集群管理
@@ -88,7 +89,7 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 |------|------|------|
 | OPS | Nameserver 管理、多集群切换 | ✅ 已实现 |
 | Dashboard | Broker / Topic / Group 概览统计 | ✅ 已实现 |
-| Dashboard | TPS / 消息量趋势统计 | ✅ 已实现（5s 采样，60 点） |
+| Dashboard | TPS / 消息量趋势统计 | ✅ 已实现（5s 采样，支持按次数 / 时间范围查看） |
 | Cluster | Broker 列表 | ✅ 已实现 |
 | Cluster | 独立页面、Broker 详情、运行时信息、拓扑图 | ✅ 已实现 |
 | Topic | Topic 列表 + 搜索 | ✅ 已实现 |
@@ -112,13 +113,14 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 | 层级 | 技术选型 | 说明 |
 |------|---------|------|
-| **桌面框架** | Tauri 2.8 | 跨平台桌面应用框架，比 Electron 更轻量 |
+| **桌面框架** | Tauri 2 | 跨平台桌面应用框架，比 Electron 更轻量 |
 | **前端框架** | React 18 | 现代化 UI 库 |
-| **开发语言** | TypeScript 5.5 | 类型安全的 JavaScript 超集 |
-| **后端语言** | Rust 1.82 | 高性能、内存安全的系统编程语言 |
+| **开发语言** | TypeScript 5.7 | 类型安全的 JavaScript 超集 |
+| **后端语言** | Rust（stable） | 高性能、内存安全的系统编程语言 |
 | **构建工具** | Vite 5 | 快速的前端构建工具 |
-| **UI 样式** | CSS + Tailwind 风格 | 现代化深色主题 |
+| **UI 样式** | Tailwind CSS v4 + 自定义 CSS | 现代化深色 / 浅色主题 |
 | **图标库** | lucide-react | 清晰简洁的图标系统 |
+| **图表** | Recharts | TPS 趋势图 |
 
 ### 架构设计
 
@@ -186,8 +188,9 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 | DELETE_TOPIC_IN_NAMESRV / BROKER | 216 / 215 | 删除 Topic |
 | GET_MIN_OFFSET / GET_MAX_OFFSET | 31 / 30 | 队列最早 / 最新位点（Topic 状态、消费 lag） |
 | SEND_MESSAGE_V2 / SEND_MESSAGE | 310 / 10 | 发送测试消息（旧 Broker 自动回退到 10） |
-| QUERY_MESSAGE | 12 | 按 Key / 时间范围查询消息 |
-| VIEW_MESSAGE_BY_ID | 33 | 按消息 ID 查询消息 |
+| QUERY_MESSAGE | 12 | 按 Key 查询消息 |
+| PULL_MESSAGE | 11 | 按时间范围拉取消息（逐队列拉取） |
+| VIEW_MESSAGE_BY_ID | 33 | 按消息 ID 查看单条消息 |
 | GET_ALL_SUBSCRIPTIONGROUP_CONFIG | 201 | 获取消费者组列表 |
 | QUERY_CONSUMER_OFFSET | 14 | 查询消费进度 |
 | UPDATE_CONSUMER_OFFSET | 15 | 重置消费位点 |
@@ -211,7 +214,7 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 1. **克隆项目**
    ```bash
-   git clone https://github.com/your-username/rocketmq-dashboard-desktop.git
+   git clone <repository-url>
    cd rocketmq-dashboard-desktop
    ```
 
@@ -222,15 +225,16 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 3. **启动开发模式**
    ```bash
-   npm run tauri dev
+   npm run dev
    ```
 
-4. **构建生产版本**
+4. **构建前端 / 桌面安装包**
    ```bash
-   npm run tauri build
+   npm run build            # 仅构建前端（输出到 dist/）
+   npm run build:desktop    # 构建桌面安装包
    ```
 
-   构建产物位于 `src-tauri/target/release/bundle/`
+   安装包位于 `src-tauri/target/release/bundle/`
 
 ---
 
@@ -238,19 +242,19 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 ### 1. 连接 RocketMQ
 
-启动应用后，在首页输入 NameServer 地址：
+启动应用后，在顶部输入 NameServer 地址（下拉框会列出最近成功连接过的地址，可删除不需要的记录）：
 
 ```
 192.168.1.100:9876
 ```
 
-或多个 NameServer（用逗号分隔）：
+多个 NameServer 用逗号分隔：
 
 ```
 192.168.1.100:9876,192.168.1.101:9876
 ```
 
-点击"连接"按钮，等待连接成功。
+点击“连接”按钮，连接成功后状态会实时显示。
 
 ### 2. 查看集群信息
 
@@ -285,40 +289,41 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 ```
 rocketmqMg/
-├── src/                          # React 前端源码
-│   ├── pages/                    # 页面组件
-│   │   ├── DashboardPage.tsx     # Dashboard 页面
-│   │   ├── ClusterPage.tsx       # 集群管理页面
-│   │   ├── TopicsPage.tsx        # Topic 管理页面
-│   │   └── ConsumersPage.tsx     # Consumer 管理页面
-│   ├── App.tsx                   # 主应用 + 路由
-│   ├── main.tsx                  # 入口文件
-│   └── index.css                 # 全局样式
+├── src/                            # React 前端
+│   ├── App.tsx                     # 主应用：导航、连接、窗口标题栏
+│   ├── main.tsx                    # 入口（I18nProvider）
+│   ├── i18n.tsx                    # 中英文文案与语言切换
+│   ├── DashboardPage.tsx           # 仪表盘（指标 / TPS 趋势）
+│   ├── TopicsPage.tsx              # Topic 列表、路由、状态、增删改、发消息
+│   ├── ConsumersPage.tsx           # 消费组、进度、连接、重置位点
+│   ├── ProducerPage.tsx            # 生产者组与在线连接
+│   ├── MessagePage.tsx             # 消息查询（ID / Key / 时间范围）
+│   ├── TracePage.tsx               # 消息轨迹
+│   ├── ClusterPage.tsx             # 集群拓扑、运行时信息
+│   ├── AclPage.tsx                 # ACL 2.0 用户与规则
+│   ├── OpsPage.tsx                 # NameServer Profile / 多集群切换
+│   ├── components/                 # Select、ComboBox、DateTimePicker、
+│   │                               # Pagination、LoadingMask、ErrorBoundary 等
+│   ├── hooks/usePagination.ts
+│   ├── utils/                      # errors、topics、clusterProfiles、nameServerHistory
+│   ├── types/                      # 前后端共享类型
+│   └── styles/                     # globals.css、monitor.css
 │
-├── src-tauri/                    # Tauri 后端源码
+├── src-tauri/                      # Rust 后端
 │   ├── src/
-│   │   ├── main.rs               # 入口文件
-│   │   ├── commands/             # Tauri 命令模块
-│   │   │   ├── mod.rs            # 模块导出
-│   │   │   ├── cluster.rs        # 集群管理命令
-│   │   │   ├── topic.rs          # Topic 管理命令
-│   │   │   └── consumer.rs       # Consumer 管理命令
-│   │   └── rocketmq/             # RocketMQ 客户端
-│   │       ├── mod.rs            # 模块导出
-│   │       ├── client.rs         # TCP 连接 + 协议处理
-│   │       └── protocol.rs       # 协议定义
-│   ├── Cargo.toml                # Rust 依赖配置
-│   └── tauri.conf.json           # Tauri 配置
+│   │   ├── main.rs                 # 入口 + 命令注册
+│   │   ├── commands/               # cluster / topic / consumer / message /
+│   │   │                           # broker / acl / producer
+│   │   └── rocketmq/               # client.rs（TCP + 编解码）、protocol.rs
+│   ├── capabilities/default.json   # 窗口控制等权限
+│   ├── icons/                      # 应用图标
+│   ├── Cargo.toml
+│   └── tauri.conf.json
 │
-├── public/                       # 静态资源
-├── package.json                  # npm 配置
-├── vite.config.ts                # Vite 配置
-├── tsconfig.json                 # TypeScript 配置
-│
-├── PROGRESS.md                   # 开发进度文档
-├── SUMMARY.md                    # 实现总结文档
-├── TEST_CHECKLIST.md             # 测试清单
-└── README.md                     # 项目说明（本文件）
+├── public/                         # 静态资源
+├── package.json / vite.config.ts / tsconfig.json
+├── README.md / README.zh-CN.md / LICENSE
+└── .github/workflows/release.yml   # 多平台构建与 Draft Release
 ```
 
 ### 添加新功能
@@ -328,16 +333,15 @@ rocketmqMg/
 在 `src-tauri/src/commands/` 目录下创建新的命令文件：
 
 ```rust
-// src-tauri/src/commands/message.rs
-use tauri::State;
-use tokio::sync::Mutex;
+// src-tauri/src/commands/example.rs
+use crate::rocketmq;
 
 #[tauri::command]
-pub async fn query_message_by_id(
-    msg_id: String,
-    client: State<'_, Mutex<Option<crate::rocketmq::RocketMQClient>>>,
-) -> Result<MessageInfo, String> {
-    // 实现逻辑
+pub async fn query_something(id: String) -> Result<String, String> {
+    // 连接状态统一保存在 rocketmq::GLOBAL_CLIENT 中
+    let global = rocketmq::GLOBAL_CLIENT.lock().await;
+    let client = global.as_ref().ok_or("Not connected to RocketMQ")?;
+    client.query_something(&id) // 具体协议逻辑写在 rocketmq/client.rs
 }
 ```
 
@@ -374,7 +378,7 @@ const queryMessage = async (msgId: string) => {
 ### 调试技巧
 
 #### 前端调试
-- 按 `F12` 打开 Chrome DevTools
+- 开发模式下右键选择“检查”，或按 `Ctrl+Shift+I` 打开开发者工具
 - 查看 Console 日志
 - 使用 React DevTools
 
@@ -392,10 +396,12 @@ println!("Response: {:?}", response);
 
 ---
 
-## 📊 性能指标
+## 📊 性能参考
 
-| 指标 | 数值 |
-|------|------|
+以下为本机测试环境的参考值，实际取决于机器与集群规模：
+
+| 指标 | 参考值 |
+|------|--------|
 | 启动时间 | < 1s |
 | 内存占用 | ~60MB |
 | 安装包大小 | ~10MB（Windows） |
@@ -408,20 +414,19 @@ println!("Response: {:?}", response);
 
 ### 单元测试
 ```bash
-# Rust 单元测试
-cd src-tauri
-cargo test
+# Rust 单元测试（纯逻辑，不需要集群）
+cargo test --manifest-path src-tauri/Cargo.toml
 
-# 前端单元测试
-npm test
+# 需要真实集群的集成测试（默认 #[ignore]，需先修改测试中的 NameServer 地址）
+cargo test --manifest-path src-tauri/Cargo.toml -- --ignored
 ```
+
+> 前端目前没有单元测试脚本，UI 通过 `npm run dev` 手工验证。
 
 ### 集成测试
 ```bash
 # 启动应用
-npm run tauri dev
-
-# 按照 TEST_CHECKLIST.md 进行手工测试
+npm run dev
 ```
 
 ---
@@ -505,10 +510,10 @@ npm run build:desktop:debug  # debug build (faster, for verification)
 
 ---
 
-## 📧 联系方式
+## 📧 反馈
 
-- **Issues**: [GitHub Issues](https://github.com/your-username/rocketmq-dashboard-desktop/issues)
-- **讨论**: [GitHub Discussions](https://github.com/your-username/rocketmq-dashboard-desktop/discussions)
+- 通过仓库的 Issues 报告 Bug 或提出建议
+- 通过 Discussions 参与讨论
 
 ---
 

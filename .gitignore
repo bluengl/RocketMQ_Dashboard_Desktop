@@ -42,6 +42,9 @@ logs/
 *.temp
 .cache/
 
+# Local development archives (process docs, not part of the repository)
+archive/
+
 # Test coverage
 coverage/
 .nyc_output/
