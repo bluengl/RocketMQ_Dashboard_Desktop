@@ -2257,8 +2257,10 @@ mod live {
     use super::*;
 
     fn test_client() -> RocketMQClient {
+        let addr = std::env::var("ROCKETMQ_TEST_NAMESERVER")
+            .unwrap_or_else(|_| "127.0.0.1:9876".to_string());
         RocketMQClient::new(ConnectionConfig {
-            name_server_addrs: vec!["192.168.153.149:9876".to_string()],
+            name_server_addrs: vec![addr],
             acl_enabled: false,
             access_key: None,
             secret_key: None,
@@ -2267,7 +2269,7 @@ mod live {
     }
 
     #[test]
-    #[ignore = "requires a live RocketMQ test cluster at 192.168.153.149:9876"]
+    #[ignore = "requires a live RocketMQ test cluster (set ROCKETMQ_TEST_NAMESERVER)"]
     fn live_topic_status_readonly() {
         let client = test_client();
         let topics = client.get_topic_list().expect("topic list");
@@ -2294,7 +2296,7 @@ mod live {
     }
 
     #[test]
-    #[ignore = "requires a live RocketMQ test cluster at 192.168.153.149:9876"]
+    #[ignore = "requires a live RocketMQ test cluster (set ROCKETMQ_TEST_NAMESERVER)"]
     fn live_topic_lifecycle_and_send() {
         let client = test_client();
         let topic = format!("ClaudeE2E_{}", now_millis());
