@@ -10,8 +10,8 @@
 
 | 状态 | 内容 |
 |------|------|
-| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点、Message Trace（按 msgId/Key）、Cluster 运行时信息/拓扑、Dashboard TPS 趋势、Producer 组/在线连接 |
-| ❌ 缺失 | 额外运维工具（发送测试消息、清理过期消息） |
+| ✅ 可用 | 连接/断开 NameServer、Broker 列表（内联 Dashboard）、Topic 列表/路由/新建/删除/更新配置/逐队列状态/发送测试消息、消息查询（ID/Key/时间范围）、Consumer 组枚举/在线连接/队列进度/重置位点、Message Trace（按 msgId/Key）、Cluster 运行时信息/拓扑、Dashboard TPS 趋势、Producer 组/在线连接、ACL 用户与规则 |
+| ❌ 缺失 | 额外运维工具（清理过期消息） |
 
 **阶段 0–3 已修复的历史 bug**
 1. `consumer.rs` 曾读取托管 `State`（恒 `None`），与 `connect_cluster` 写入的 `GLOBAL_CLIENT` 不相通；已统一为 `GLOBAL_CLIENT`。
@@ -232,7 +232,31 @@
 - 未在 CI 或目标系统上实际执行完整安装包构建（需要对应平台与签名配置）。
 
 ### 遗留
-- 发送测试消息、清理过期消息等额外运维工具未实现（不在本阶段验收范围）。
+- 发送测试消息已在阶段 9 补齐；清理过期消息仍未实现（破坏性写操作，另行评估）。
+
+---
+
+## 阶段 9：Topic 完善（已完成，2026-10-21）
+
+### 后端（已实现）
+- **更新配置**：`UPDATE_AND_CREATE_TOPIC`（17），携带 `topic / readQueueNums / writeQueueNums / perm / topicFilterType / order`；默认广播到路由中的所有 master broker，也可指定单个 broker，逐 broker 返回成功列表与错误。
+- **Topic 状态**：按路由逐 broker、逐队列调用 `GET_MIN_OFFSET`（31）/ `GET_MAX_OFFSET`（30），汇总 `messageCount = max - min`。
+- **发送测试消息**：`SEND_MESSAGE_V2`（310），请求体为原始消息体，`WAIT / TAGS / KEYS` 等属性放入 extFields；Broker 返回 code=3（不支持）时自动回退到 `SEND_MESSAGE`（10）长字段名格式。
+- 新命令：`update_topic`、`get_topic_status`、`send_test_message`。
+
+### 前端（`src/TopicsPage.tsx`）
+- Topic 详情面板新增 Route / Status 两个 Tab；状态面板展示逐队列 min / max offset、消息量与合计。
+- 新增 Edit Topic 弹窗：预填当前读写队列数与权限，可选目标 broker。
+- 新增 Send Test Message 弹窗：可选 Tag / Key / Queue ID / Broker，发送后展示 msgId、队列与位点。
+- 补充中英文 i18n 文案。
+
+### 验证
+- `cargo check`、`cargo test`、`tsc --noEmit`、`npm run build` 通过。
+- Vite 预览注入 invoke stub：状态面板、更新弹窗、发送弹窗与成功回执均正常渲染。
+- 实机只读验证：对 5.3.2 测试集群（192.168.153.149:9876）的 `BenchmarkTest` 调用状态聚合成功（1024 队列，0 错误）。
+- 更新配置与发送消息属写操作，未在真实集群执行；可在测试集群手动运行：
+  `cargo test live_topic_lifecycle_and_send -- --ignored --nocapture`
+  （会创建并在结束时删除 `ClaudeE2E_*` 临时 Topic）。
 
 ---
 
@@ -253,6 +277,7 @@
 | QUERY_BROKER_OFFSET | 13 | ❌ 4.7.7 Broker 不支持；改用 30/31 逐队列查询 |
 | UPDATE_AND_CREATE_TOPIC | 17 | ✅ 已确认 |
 | GET_BROKER_RUNTIME_INFO | 28 | ✅ 已确认 |
+| SEND_MESSAGE / SEND_MESSAGE_V2 | 10 / 310 | ✅ 310 为默认；code=3 时回退 10（4.x 回退分支未实测） |
 | GET_CONSUMER_LIST_BY_GROUP | 38 | ✅ 已确认 |
 | DELETE_TOPIC_IN_NAMESRV | 216 | ✅ 已确认 |
 | VIEW_BROKER_STATS_DATA | 107 | ❌ 5.3.2 Broker 不支持（code=3）；指标改由 28 提供 |

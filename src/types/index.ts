@@ -57,6 +57,35 @@ export interface TopicRouteData {
   brokerDatas: TopicBrokerData[]
 }
 
+export interface TopicQueueStatus {
+  brokerName: string
+  brokerAddr: string
+  queueId: number
+  minOffset: number
+  maxOffset: number
+  messageCount: number
+}
+
+export interface TopicStatus {
+  topic: string
+  queues: TopicQueueStatus[]
+  totalMessages: number
+  errors: string[]
+}
+
+export interface TopicUpdateResult {
+  updatedBrokers: string[]
+  errors: string[]
+}
+
+export interface SendMessageResult {
+  msgId: string
+  queueId: number
+  queueOffset: number
+  brokerName: string
+  brokerAddr: string
+}
+
 export interface ConsumerConnectionInfo {
   clientId: string
   clientAddr: string

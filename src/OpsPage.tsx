@@ -206,7 +206,7 @@ export default function OpsPage({
         </div>
 
         {profiles.length === 0 ? (
-          <div className="text-center py-10 text-sm text-slate-400">
+          <div className="text-center py-14 text-sm text-slate-400">
             {t('No saved clusters. Add a NameServer profile to switch between clusters quickly.')}
           </div>
         ) : (

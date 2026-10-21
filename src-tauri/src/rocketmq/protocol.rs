@@ -6,6 +6,7 @@ pub const GET_BROKER_CLUSTER_INFO: i32 = 106;
 pub const GET_ALL_TOPIC_LIST_FROM_NAMESERVER: i32 = 206;
 pub const GET_ROUTEINFO_BY_TOPIC: i32 = 105;
 pub const QUERY_MESSAGE: i32 = 12;
+pub const PULL_MESSAGE: i32 = 11;
 pub const VIEW_MESSAGE_BY_ID: i32 = 33;
 pub const SEARCH_OFFSET_BY_TIMESTAMP: i32 = 29;
 pub const UPDATE_AND_CREATE_TOPIC: i32 = 17;
@@ -36,6 +37,11 @@ pub const GET_MIN_OFFSET: i32 = 31;
 // Producer admin
 pub const GET_PRODUCER_CONNECTION_LIST: i32 = 204;
 pub const GET_ALL_PRODUCER_INFO: i32 = 328;
+
+// Message send
+pub const SEND_MESSAGE: i32 = 10;
+pub const SEND_MESSAGE_V2: i32 = 310;
+pub const REQUEST_CODE_NOT_SUPPORTED: i32 = 3;
 
 // Message trace
 pub const DEFAULT_TRACE_TOPIC: &str = "RMQ_SYS_TRACE_TOPIC";
@@ -188,6 +194,43 @@ pub struct TopicRouteData {
     pub queue_datas: Vec<QueueData>,
     #[serde(rename = "brokerDatas", default)]
     pub broker_datas: Vec<BrokerData>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicQueueStatus {
+    pub broker_name: String,
+    pub broker_addr: String,
+    pub queue_id: i32,
+    pub min_offset: i64,
+    pub max_offset: i64,
+    pub message_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicStatus {
+    pub topic: String,
+    pub queues: Vec<TopicQueueStatus>,
+    pub total_messages: i64,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicUpdateResult {
+    pub updated_brokers: Vec<String>,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendMessageResult {
+    pub msg_id: String,
+    pub queue_id: i32,
+    pub queue_offset: i64,
+    pub broker_name: String,
+    pub broker_addr: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

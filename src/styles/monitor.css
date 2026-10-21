@@ -146,8 +146,67 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
   padding: 16px 22px;
   border-bottom: 1px solid var(--rmq-border);
+}
+
+.rmq-throughput-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.rmq-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--rmq-border);
+  border-radius: 8px;
+  background: var(--rmq-surface-sunken);
+}
+
+.rmq-segmented button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rmq-ink-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.rmq-segmented button:hover {
+  color: var(--rmq-ink);
+}
+
+.rmq-segmented button.is-active {
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
+
+.rmq-range-time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rmq-range-time .dtp {
+  width: 172px;
+}
+
+.rmq-now-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--rmq-ink-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .rmq-card-title {

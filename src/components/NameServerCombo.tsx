@@ -90,8 +90,9 @@ export default function NameServerCombo({
         tabIndex={-1}
         aria-label={t('Show saved NameServers')}
         title={t('Show saved NameServers')}
+        aria-expanded={open}
       >
-        <ChevronDown size={14} />
+        <ChevronDown size={14} className="app-ns-combo-chevron" />
       </button>
       {open && history.length > 0 && (
         <div className="app-ns-combo-menu" role="listbox" aria-label={t('Recent connections')}>

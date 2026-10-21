@@ -5,6 +5,9 @@ import type { ProducerConnectionInfo } from './types'
 import { errorMessage } from './utils/errors'
 import Pagination from './components/Pagination'
 import ErrorNotice from './components/ErrorNotice'
+import LoadingMask from './components/LoadingMask'
+import ComboBox from './components/ComboBox'
+import { filterUserTopics } from './utils/topics'
 import { usePagination } from './hooks/usePagination'
 import { useI18n } from './i18n'
 
@@ -15,22 +18,51 @@ interface ProducerPageProps {
 export default function ProducerPage({ connected }: ProducerPageProps) {
   const { t } = useI18n()
   const [groups, setGroups] = useState<string[]>([])
+  const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
   const [topicFilter, setTopicFilter] = useState('')
+  const [topics, setTopics] = useState<string[]>([])
   const [connections, setConnections] = useState<ProducerConnectionInfo[]>([])
   const [connectionsLoading, setConnectionsLoading] = useState(false)
   const [connectionsError, setConnectionsError] = useState<string | null>(null)
+
+  // GET_ALL_PRODUCER_INFO lists groups but carries no connection state, so probe
+  // each group's connection list (bounded concurrency) to derive online status.
+  const loadStatuses = async (list: string[]) => {
+    const entries: Array<[string, boolean]> = []
+    const queue = [...list]
+    const worker = async () => {
+      for (;;) {
+        const group = queue.shift()
+        if (!group) return
+        try {
+          const result = await invoke<ProducerConnectionInfo[]>('get_producer_connections', {
+            group,
+            topic: null,
+          })
+          entries.push([group, result.length > 0])
+        } catch {
+          entries.push([group, false])
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(6, list.length) }, () => worker()))
+    setOnlineMap(Object.fromEntries(entries))
+  }
 
   const loadGroups = async () => {
     if (!connected) return
     setLoading(true)
     setError(null)
     try {
-      setGroups(await invoke<string[]>('get_producer_groups'))
+      const result = await invoke<string[]>('get_producer_groups')
+      setGroups(result)
+      setOnlineMap({})
+      void loadStatuses(result)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -47,6 +79,7 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
         topic: topic.trim() || null,
       })
       setConnections(result)
+      setOnlineMap((previous) => ({ ...previous, [group]: result.length > 0 }))
     } catch (err) {
       setConnectionsError(errorMessage(err))
       setConnections([])
@@ -63,10 +96,29 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
   }
 
   useEffect(() => {
+    if (!connected) {
+      setTopics([])
+      return
+    }
+    let cancelled = false
+    invoke<string[]>('get_topic_list')
+      .then((list) => {
+        if (!cancelled) setTopics(filterUserTopics(list).sort((a, b) => a.localeCompare(b)))
+      })
+      .catch(() => {
+        if (!cancelled) setTopics([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [connected])
+
+  useEffect(() => {
     if (connected) {
       loadGroups()
     } else {
       setGroups([])
+      setOnlineMap({})
       setSelectedGroup(null)
       setConnections([])
     }
@@ -119,20 +171,15 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
         <div className="text-center py-12 text-slate-400">
           {t('Please connect to RocketMQ to view producers')}
         </div>
-      ) : loading ? (
-        <div className="text-center py-12 text-slate-400">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
-          {t('Loading producer groups...')}
-        </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="rmq-loading-wrap grid grid-cols-3 gap-4">
           <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
             <div className="px-5 py-4 bg-slate-900 text-slate-400 text-sm font-medium">
               {t('Groups ({count})', { count: filteredGroups.length })}
             </div>
             <div className="max-h-[32rem] overflow-y-auto divide-y divide-slate-700">
               {filteredGroups.length === 0 ? (
-                <div className="text-center py-8 text-slate-400 text-sm px-4">
+                <div className="text-center py-14 text-slate-400 text-sm px-4">
                   {searchQuery ? t('No groups match your search') : t('No producer groups found')}
                 </div>
               ) : (
@@ -146,7 +193,20 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
                         : 'text-slate-200 hover:bg-slate-750'
                     }`}
                   >
-                    {group}
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate">{group}</span>
+                      {onlineMap[group] !== undefined && (
+                        <span
+                          className={`shrink-0 rounded px-2 py-0.5 text-xs ${
+                            onlineMap[group]
+                              ? 'bg-green-500/10 text-green-400'
+                              : 'bg-slate-700 text-slate-300'
+                          }`}
+                        >
+                          {t(onlineMap[group] ? 'Online' : 'Offline')}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 ))
               )}
@@ -170,18 +230,33 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
               <>
                 <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-4">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium text-cyan-400">{selectedGroup}</div>
                     <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={topicFilter}
-                        onChange={(e) => setTopicFilter(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') void loadConnections(selectedGroup)
-                        }}
-                        placeholder={t('Optional topic (limits brokers queried)')}
-                        className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                      />
+                      <div className="font-medium text-cyan-400">{selectedGroup}</div>
+                      {onlineMap[selectedGroup] !== undefined && (
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs ${
+                            onlineMap[selectedGroup]
+                              ? 'bg-green-500/10 text-green-400'
+                              : 'bg-slate-700 text-slate-300'
+                          }`}
+                        >
+                          {t(onlineMap[selectedGroup] ? 'Online' : 'Offline')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-72 max-w-full">
+                        <ComboBox
+                          value={topicFilter}
+                          options={topics}
+                          onChange={setTopicFilter}
+                          onSubmit={(value) => selectedGroup && loadConnections(selectedGroup, value ?? topicFilter)}
+                          submitOnSelect
+                          placeholder={t('Optional topic (limits brokers queried)')}
+                          ariaLabel={t('Topic')}
+                          emptyLabel={t('No matching topics')}
+                        />
+                      </div>
                       <button
                         onClick={() => loadConnections(selectedGroup)}
                         disabled={connectionsLoading}
@@ -218,11 +293,11 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
                   {connectionsError && <ErrorNotice error={connectionsError} compact />}
 
                   {connectionsLoading ? (
-                    <div className="text-center py-10 text-slate-400 text-sm">
+                    <div className="text-center py-14 text-slate-400 text-sm">
                     {t('Loading connections...')}
                     </div>
                   ) : connections.length === 0 ? (
-                    <div className="text-center py-10 text-slate-400 text-sm">
+                    <div className="text-center py-14 text-slate-400 text-sm">
                     {t('No online producer clients for this group')}
                     </div>
                   ) : (
@@ -254,6 +329,7 @@ export default function ProducerPage({ connected }: ProducerPageProps) {
               </>
             )}
           </div>
+          <LoadingMask active={loading} />
         </div>
       )}
     </div>

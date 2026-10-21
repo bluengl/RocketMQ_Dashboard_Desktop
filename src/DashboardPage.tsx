@@ -13,11 +13,21 @@ import {
 import type { DashboardMetrics, TpsSample } from './types/broker'
 import { errorMessage } from './utils/errors'
 import ErrorNotice from './components/ErrorNotice'
+import Select from './components/Select'
+import DateTimePicker from './components/DateTimePicker'
 import { useI18n } from './i18n'
 import './styles/monitor.css'
 
 const POLL_INTERVAL_MS = 5000
-const MAX_SAMPLES = 60
+const MAX_HISTORY = 2400
+
+type RangeMode = 'count' | 'time'
+
+const pad = (value: number) => String(value).padStart(2, '0')
+
+function toDateTimeValue(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 
 const SERIES = [
   { key: 'putTps' as const, name: 'Produce TPS', color: 'var(--rmq-series-1)' },
@@ -26,6 +36,7 @@ const SERIES = [
 
 interface DashboardPageProps {
   connected: boolean
+  active?: boolean
 }
 
 interface TooltipItem {
@@ -84,7 +95,7 @@ function TpsTooltip({
   )
 }
 
-export default function DashboardPage({ connected }: DashboardPageProps) {
+export default function DashboardPage({ connected, active = true }: DashboardPageProps) {
   const { t, language } = useI18n()
   const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US'
   const clock = (time: number) => formatClock(time, locale)
@@ -94,6 +105,11 @@ export default function DashboardPage({ connected }: DashboardPageProps) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [showTable, setShowTable] = useState(false)
+  const [rangeMode, setRangeMode] = useState<RangeMode>('count')
+  const [sampleCount, setSampleCount] = useState(20)
+  const [rangeStart, setRangeStart] = useState('')
+  const [rangeEnd, setRangeEnd] = useState('')
+  const [untilNow, setUntilNow] = useState(true)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -109,7 +125,7 @@ export default function DashboardPage({ connected }: DashboardPageProps) {
             putTps: result.totalPutTps,
             getTps: result.totalGetTps,
           },
-        ].slice(-MAX_SAMPLES),
+        ].slice(-MAX_HISTORY),
       )
     } catch (err) {
       setError(errorMessage(err))
@@ -125,17 +141,34 @@ export default function DashboardPage({ connected }: DashboardPageProps) {
       setError(null)
       return
     }
+    // Default time range starts when the cluster connects; only reset on (re)connect.
+    setRangeStart(toDateTimeValue(new Date()))
+    setRangeEnd('')
+    setUntilNow(true)
+  }, [connected])
+
+  useEffect(() => {
+    if (!connected || !active) return
 
     load()
     // Poll in the background so existing metrics stay on screen.
     const timer = setInterval(() => load(true), POLL_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [connected, load])
+  }, [connected, active, load])
+
+  const displayHistory = useMemo(() => {
+    if (rangeMode === 'count') {
+      return history.slice(-sampleCount)
+    }
+    const start = rangeStart ? new Date(rangeStart).getTime() : 0
+    const end = untilNow ? Date.now() : rangeEnd ? new Date(rangeEnd).getTime() : Date.now()
+    return history.filter((sample) => sample.time >= start && sample.time <= end)
+  }, [history, rangeMode, sampleCount, rangeStart, rangeEnd, untilNow])
 
   const latest = history.length > 0 ? history[history.length - 1] : null
   const onlineCount = metrics ? metrics.brokers.filter((b) => b.online).length : 0
 
-  const tableRows = useMemo(() => [...history].reverse(), [history])
+  const tableRows = useMemo(() => [...displayHistory].reverse(), [displayHistory])
 
   if (!connected) {
     return (
@@ -214,14 +247,67 @@ export default function DashboardPage({ connected }: DashboardPageProps) {
           <div>
             <div className="rmq-card-title">{t('Message throughput')}</div>
             <div className="rmq-card-meta">
-              {history.length > 1
-                ? `${t('Last {count} samples', { count: history.length })} · ${clock(history[0].time)} – ${clock(history[history.length - 1].time)}`
+              {displayHistory.length > 1
+                ? rangeMode === 'count'
+                  ? `${t('Last {count} samples', { count: displayHistory.length })} · ${clock(displayHistory[0].time)} – ${clock(displayHistory[displayHistory.length - 1].time)}`
+                  : `${clock(displayHistory[0].time)} – ${clock(displayHistory[displayHistory.length - 1].time)} · ${displayHistory.length} ${t('samples')}`
                 : t('Collecting samples…')}
             </div>
           </div>
-          <button className="rmq-btn" onClick={() => setShowTable((v) => !v)}>
-            {showTable ? t('Chart view') : t('Table view')}
-          </button>
+          <div className="rmq-throughput-controls">
+            <div className="rmq-segmented">
+              <button
+                type="button"
+                className={rangeMode === 'count' ? 'is-active' : ''}
+                onClick={() => setRangeMode('count')}
+              >
+                {t('By samples')}
+              </button>
+              <button
+                type="button"
+                className={rangeMode === 'time' ? 'is-active' : ''}
+                onClick={() => setRangeMode('time')}
+              >
+                {t('By time')}
+              </button>
+            </div>
+            {rangeMode === 'count' ? (
+              <Select
+                compact
+                value={String(sampleCount)}
+                options={[10, 20, 30, 60, 100].map((count) => ({
+                  value: String(count),
+                  label: `${t('Last')} ${count}`,
+                }))}
+                onChange={(value) => setSampleCount(Number(value))}
+                ariaLabel={t('Samples')}
+              />
+            ) : (
+              <div className="rmq-range-time">
+                <DateTimePicker
+                  value={rangeStart}
+                  onChange={setRangeStart}
+                  placeholder={t('Start time')}
+                  ariaLabel={t('Start time')}
+                />
+                <label className="rmq-now-toggle">
+                  <input type="checkbox" checked={untilNow} onChange={(event) => setUntilNow(event.target.checked)} />
+                  {t('Until now')}
+                </label>
+                {!untilNow && (
+                  <DateTimePicker
+                    value={rangeEnd}
+                    onChange={setRangeEnd}
+                    placeholder={t('End time')}
+                    ariaLabel={t('End time')}
+                  />
+                )}
+              </div>
+            )}
+            <button className="rmq-btn" onClick={() => setShowTable((v) => !v)}>
+              {showTable ? t('Chart view') : t('Table view')}
+            </button>
+          </div>
         </div>
 
         <div className="rmq-chart-legend">
@@ -265,14 +351,14 @@ export default function DashboardPage({ connected }: DashboardPageProps) {
               </tbody>
             </table>
           </div>
-        ) : history.length < 2 ? (
+        ) : displayHistory.length < 2 ? (
           <div className="rmq-empty">
             <span>{t('Waiting for the next sample to draw the trend…')}</span>
           </div>
         ) : (
           <div className="rmq-chart-body">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history} margin={{ top: 8, right: 18, bottom: 4, left: 0 }}>
+              <LineChart data={displayHistory} margin={{ top: 8, right: 18, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke="var(--app-border)" strokeWidth={1} vertical={false} />
                 <XAxis
                   dataKey="time"

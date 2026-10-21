@@ -51,7 +51,9 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 #### 3. Topic 管理
 - ✅ Topic 列表查询
 - ✅ Topic 路由查看
-- ✅ 新建 / 删除 Topic
+- ✅ 新建 / 删除 / 更新 Topic 配置
+- ✅ Topic 状态（逐 Broker / 队列 offset 与消息量）
+- ✅ 发送测试消息（Tag / Key / 指定队列 / 指定 Broker）
 - ✅ 搜索和过滤功能
 
 #### 4. Consumer 管理
@@ -75,7 +77,7 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 ### 开发中功能
 
-- 🚧 额外运维工具（发送测试消息、清理过期消息）
+- 🚧 额外运维工具（清理过期消息）
 - 🚧 安装包在目标平台上的完整验证
 
 ### 与 Apache RocketMQ Dashboard 功能对照
@@ -90,9 +92,9 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 | Cluster | Broker 列表 | ✅ 已实现 |
 | Cluster | 独立页面、Broker 详情、运行时信息、拓扑图 | ✅ 已实现 |
 | Topic | Topic 列表 + 搜索 | ✅ 已实现 |
-| Topic | 新增 / 删除 / 路由查看 | ✅ 已实现（更新配置 ❌） |
-| Topic | 详情（状态 / 路由） | ⚠️ 路由 ✅，状态 ❌ |
-| Topic | 发送测试消息 | ❌ 未实现 |
+| Topic | 新增 / 删除 / 更新配置 / 路由查看 | ✅ 已实现 |
+| Topic | 详情（状态 / 路由） | ✅ 已实现（状态含逐队列 min/max offset） |
+| Topic | 发送测试消息 | ✅ 已实现 |
 | Consumer | 消费组列表 | ✅ 已实现 |
 | Consumer | 消费进度 / 在线实例 | ✅ 已实现 |
 | Consumer | 重置消费位点 | ✅ 已实现 |
@@ -163,7 +165,7 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 // Header 结构
 {
-  "code": 103,                          // 请求码
+  "code": 106,                          // 请求码
   "language": "RUST",                   // 语言标识
   "version": 1,                         // 协议版本
   "opaque": 1,                          // 请求 ID
@@ -177,11 +179,22 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 
 | 协议名称 | 请求码 | 功能 |
 |---------|-------|------|
-| GET_BROKER_CLUSTER_INFO | 103 | 获取集群信息 |
-| GET_ALL_TOPIC_LIST_FROM_NAMESERVER | 17 | 获取所有 Topic |
-| GET_ALL_CONSUMER_GROUP | 200 | 获取消费者组列表 |
+| GET_ROUTEINFO_BY_TOPIC | 105 | 获取 Topic 路由 |
+| GET_BROKER_CLUSTER_INFO | 106 | 获取集群信息 |
+| GET_ALL_TOPIC_LIST_FROM_NAMESERVER | 206 | 获取所有 Topic |
+| UPDATE_AND_CREATE_TOPIC | 17 | 新建 / 更新 Topic 配置 |
+| DELETE_TOPIC_IN_NAMESRV / BROKER | 216 / 215 | 删除 Topic |
+| GET_MIN_OFFSET / GET_MAX_OFFSET | 31 / 30 | 队列最早 / 最新位点（Topic 状态、消费 lag） |
+| SEND_MESSAGE_V2 / SEND_MESSAGE | 310 / 10 | 发送测试消息（旧 Broker 自动回退到 10） |
+| QUERY_MESSAGE | 12 | 按 Key / 时间范围查询消息 |
+| VIEW_MESSAGE_BY_ID | 33 | 按消息 ID 查询消息 |
+| GET_ALL_SUBSCRIPTIONGROUP_CONFIG | 201 | 获取消费者组列表 |
 | QUERY_CONSUMER_OFFSET | 14 | 查询消费进度 |
-| GET_CONSUMER_CONNECTION_LIST | 204 | 查询在线实例 |
+| UPDATE_CONSUMER_OFFSET | 15 | 重置消费位点 |
+| GET_CONSUMER_CONNECTION_LIST | 203 | 查询消费者在线实例 |
+| GET_PRODUCER_CONNECTION_LIST / GET_ALL_PRODUCER_INFO | 204 / 328 | 生产者连接 / 生产者组 |
+| GET_BROKER_RUNTIME_INFO | 28 | Broker 运行时信息 |
+| AUTH_* (ACL 2.0) | 3001–3010 | 用户与规则 CRUD |
 
 ---
 
@@ -252,7 +265,9 @@ RocketMQ Dashboard Desktop 是一个功能完整的 Apache RocketMQ 管理控制
 点击侧边栏的"Topics"，可以：
 - 查看所有 Topic
 - 搜索 Topic
-- 查看 Topic 详细信息
+- 查看 Topic 路由与状态（逐队列 min/max offset）
+- 新建、更新配置（读写队列数 / 权限）、删除 Topic
+- 发送测试消息（可选 Tag / Key / 队列 / Broker）
 
 ### 4. 监控 Consumer
 
@@ -433,15 +448,11 @@ npm run build:desktop:debug  # debug build (faster, for verification)
 
 ## 🐛 已知问题
 
-1. **Consumer 协议验证**
-   - `GET_ALL_CONSUMER_GROUP` 可能需要连接到 Broker（而非 NameServer）
-   - 需要实际测试协议是否正确返回数据
+1. **大数据量场景**
+   - Topic 列表已支持分页，但未做虚拟滚动
+   - Topic 状态需逐队列查询 min/max offset，1000+ 队列时耗时数秒
 
-2. **大数据量场景**
-   - 当 Topic 数量 > 1000 时，列表加载可能较慢
-   - 待实现分页和虚拟滚动优化
-
-3. **错误处理**
+2. **错误处理**
    - 部分错误信息不够详细
    - 需要完善网络错误、协议错误的区分
 
@@ -449,20 +460,11 @@ npm run build:desktop:debug  # debug build (faster, for verification)
 
 ## 🗺️ Roadmap
 
-### v0.4.0（开发中）
-- [ ] 消息查询功能（按 ID / Key / Offset）
-- [ ] Dashboard 实时监控（TPS、堆积、健康度）
-- [ ] 运维工具（重置位点、发送测试消息）
-
-### v0.5.0
-- [ ] ACL 权限管理
-- [ ] 消息轨迹查询
-- [ ] 配置管理
-
-### v1.0.0
-- [ ] 完整的测试覆盖
-- [ ] 性能优化
-- [ ] 多语言支持（English / 中文）
+### 后续
+- [ ] 清理过期消息等额外运维工具
+- [ ] 安装包在 Windows / macOS / Linux 上的安装与启动验证
+- [ ] 在开启 `traceTopicEnable` / ACL 的 Broker 上完成 trace 与 ACL 端到端复验
+- [ ] 大数据量场景的虚拟滚动优化
 - [ ] 自动更新功能
 
 ---

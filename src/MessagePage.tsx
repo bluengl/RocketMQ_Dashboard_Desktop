@@ -1,15 +1,19 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { MessageSquare, Search, RefreshCw, KeyRound, Clock, GitBranch } from 'lucide-react'
 import type { MessageInfo } from './types'
 import { errorMessage } from './utils/errors'
 import Pagination from './components/Pagination'
 import ErrorNotice from './components/ErrorNotice'
+import DateTimePicker from './components/DateTimePicker'
+import ComboBox from './components/ComboBox'
+import { filterUserTopics } from './utils/topics'
 import { usePagination } from './hooks/usePagination'
 import { useI18n } from './i18n'
 
 interface MessagePageProps {
   connected: boolean
+  active?: boolean
   onViewTrace?: (msgId: string) => void
 }
 
@@ -28,7 +32,7 @@ function formatTimestamp(ts: number | undefined, locale: string): string {
   return new Date(ts).toLocaleString(locale)
 }
 
-export default function MessagePage({ connected, onViewTrace }: MessagePageProps) {
+export default function MessagePage({ connected, active = true, onViewTrace }: MessagePageProps) {
   const { t, language } = useI18n()
   const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US'
   const [msgId, setMsgId] = useState('')
@@ -37,12 +41,32 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
   const [beginTime, setBeginTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [timeTopic, setTimeTopic] = useState('')
+  const [topics, setTopics] = useState<string[]>([])
   const [messages, setMessages] = useState<MessageInfo[]>([])
   const [selected, setSelected] = useState<MessageInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasQueried, setHasQueried] = useState(false)
   const messagePager = usePagination(messages, 20)
+
+  useEffect(() => {
+    if (!connected) {
+      setTopics([])
+      return
+    }
+    if (!active) return
+    let cancelled = false
+    invoke<string[]>('get_topic_list')
+      .then((list) => {
+        if (!cancelled) setTopics(filterUserTopics(list).sort((a, b) => a.localeCompare(b)))
+      })
+      .catch(() => {
+        if (!cancelled) setTopics([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [connected, active])
 
   const searchById = async () => {
     if (!msgId.trim()) return
@@ -61,15 +85,23 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
   }
 
   const searchByKey = async () => {
-    if (!topic.trim() || !key.trim()) return
+    if (!topic.trim()) return
     setLoading(true)
     setHasQueried(true)
     setError(null)
     try {
-      const result = await invoke<MessageInfo[]>('query_message_by_key', {
-        topic: topic.trim(),
-        key: key.trim(),
-      })
+      const trimmedKey = key.trim()
+      // Without a key, list the topic's recent messages instead of requiring one.
+      const result = trimmedKey
+        ? await invoke<MessageInfo[]>('query_message_by_key', {
+            topic: topic.trim(),
+            key: trimmedKey,
+          })
+        : await invoke<MessageInfo[]>('query_message_by_time', {
+            topic: topic.trim(),
+            beginTs: Date.now() - 24 * 60 * 60 * 1000,
+            endTs: Date.now(),
+          })
       setMessages(result)
       setSelected(result[0] ?? null)
     } catch (err) {
@@ -139,23 +171,24 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
             <KeyRound className="w-4 h-4 text-orange-400" />
             {t('Query by Topic + Key')}
           </div>
-          <input
-            type="text"
+          <ComboBox
             value={topic}
-            onChange={(e) => setTopic(e.target.value)}
+            options={topics}
+            onChange={setTopic}
             placeholder={t('Topic')}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            ariaLabel={t('Topic')}
+            emptyLabel={t('No matching topics')}
           />
           <input
             type="text"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder={t('Message Key')}
+            placeholder={t('Message Key (optional)')}
             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
           />
           <button
             onClick={searchByKey}
-            disabled={!connected || loading || !topic.trim() || !key.trim()}
+            disabled={!connected || loading || !topic.trim()}
             className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-400 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {t('Search')}
@@ -167,24 +200,25 @@ export default function MessagePage({ connected, onViewTrace }: MessagePageProps
             <Clock className="w-4 h-4 text-green-400" />
             {t('Query by Time Range')}
           </div>
-          <input
-            type="text"
+          <ComboBox
             value={timeTopic}
-            onChange={(e) => setTimeTopic(e.target.value)}
+            options={topics}
+            onChange={setTimeTopic}
             placeholder={t('Topic')}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            ariaLabel={t('Topic')}
+            emptyLabel={t('No matching topics')}
           />
-          <input
-            type="datetime-local"
+          <DateTimePicker
             value={beginTime}
-            onChange={(e) => setBeginTime(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
+            onChange={setBeginTime}
+            placeholder={t('Start time')}
+            ariaLabel={t('Start time')}
           />
-          <input
-            type="datetime-local"
+          <DateTimePicker
             value={endTime}
-            onChange={(e) => setEndTime(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
+            onChange={setEndTime}
+            placeholder={t('End time')}
+            ariaLabel={t('End time')}
           />
           <button
             onClick={searchByTime}

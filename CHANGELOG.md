@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Topic management completion**
+  - Update topic configuration via `UPDATE_AND_CREATE_TOPIC` (17), applied to the selected broker or every master broker
+  - Topic status view aggregating per-queue `GET_MIN_OFFSET` (31) / `GET_MAX_OFFSET` (30) into message counts
+  - Send test messages via `SEND_MESSAGE_V2` (310) with automatic fallback to `SEND_MESSAGE` (10); optional tag, key, queue ID and broker, synchronous (`WAIT=true`)
 - **ACL management (phase 7)**
   - ACL 2.0 users: list, create, update and delete via `AUTH_CREATE_USER` (3001), `AUTH_UPDATE_USER` (3002), `AUTH_DELETE_USER` (3003) and `AUTH_LIST_USER` (3005)
   - ACL 2.0 rules: list, create, update and delete via `AUTH_CREATE_ACL` (3006), `AUTH_UPDATE_ACL` (3007), `AUTH_DELETE_ACL` (3008) and `AUTH_LIST_ACL` (3010)
@@ -49,7 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `QUERY_CONSUMER_OFFSET` now sends `queueId` and reads the offset from the response header
 
 ### Planned
-- Producer query
+- Cleanup expired messages
+- Installer verification on target platforms
 
 ## [0.3.0-alpha] - 2026-10-20
 

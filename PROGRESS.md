@@ -1,6 +1,6 @@
 # RocketMQ Dashboard 桌面版 - 开发进度
 
-> **最新进展（2026-10-20）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 4 Cluster + Dashboard（运行时信息/拓扑/TPS 趋势）、阶段 5 Producer 查询、阶段 6 Message Trace、阶段 7 ACL（用户/规则 CRUD + 请求签名）、阶段 8 OPS/多集群/分页/错误分类/打包配置 已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> **最新进展（2026-10-21）**：阶段 0 基线修复、阶段 1 消息查询、阶段 2 Topic 管理、阶段 3 Consumer 管理（组枚举/连接/进度/重置位点）、阶段 4 Cluster + Dashboard（运行时信息/拓扑/TPS 趋势）、阶段 5 Producer 查询、阶段 6 Message Trace、阶段 7 ACL（用户/规则 CRUD + 请求签名）、阶段 8 OPS/多集群/分页/错误分类/打包配置、阶段 9 Topic 完善（更新配置/逐队列状态/发送测试消息）已完成。开发计划见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ## 测试记录（2026-10-20）
 
@@ -89,7 +89,7 @@ Dashboard、Topics（列表/路由/创建弹窗/权限）、Consumers（组列�
 - [x] 集群拓扑可视化
 
 **实现的 RocketMQ 协议**:
-- `GET_BROKER_CLUSTER_INFO` (Code: 103)
+- `GET_BROKER_CLUSTER_INFO` (Code: 106)
 - 返回 `brokerAddrTable`、`clusterAddrTable` 结构
 - 解析 Broker 主从关系
 
@@ -97,10 +97,19 @@ Dashboard、Topics（列表/路由/创建弹窗/权限）、Consumers（组列�
 - [x] 获取所有 Topic 列表
 - [x] Topic 列表展示（名称、Broker 数量）
 - [x] Topic 详情查看
+- [x] Topic 路由查看
+- [x] 新建 / 删除 Topic
+- [x] 更新 Topic 配置（读/写队列数、权限，支持指定 Broker 或全部主 Broker）
+- [x] Topic 状态（逐 Broker / 队列 min / max offset 与消息量）
+- [x] 发送测试消息（Tag / Key / 队列 / Broker 可选）
 
 **实现的 RocketMQ 协议**:
-- `GET_ALL_TOPIC_LIST_FROM_NAMESERVER` (Code: 17)
-- 返回 `topicList` 数组
+- `GET_ALL_TOPIC_LIST_FROM_NAMESERVER` (Code: 206)
+- `GET_ROUTEINFO_BY_TOPIC` (Code: 105)
+- `UPDATE_AND_CREATE_TOPIC` (Code: 17)
+- `DELETE_TOPIC_IN_NAMESRV` / `DELETE_TOPIC_IN_BROKER` (Code: 216 / 215)
+- `GET_MIN_OFFSET` / `GET_MAX_OFFSET` (Code: 31 / 30)
+- `SEND_MESSAGE_V2` / `SEND_MESSAGE` (Code: 310 / 10)
 
 ### ✅ 4. 前端路由和导航（100%）
 - [x] React Router v6 集成
@@ -259,7 +268,7 @@ rocketmqMg/
 
 // Header 结构:
 {
-  "code": 103,          // 请求码
+  "code": 106,          // 请求码
   "language": "RUST",
   "version": 1,
   "opaque": 1,         // 请求 ID
@@ -285,12 +294,12 @@ rocketmqMg/
    - 在 Windows / macOS / Linux 上执行 `npm run build:desktop`，验证安装与启动
 
 2. **可选运维工具**
-   - 发送测试消息、清理过期消息
+   - 清理过期消息
 
 ## 已知问题
 
-1. 当前未实现 ACL 认证（NameServer 未启用 ACL 时可正常使用）
-2. 消费者组查询协议可能需要连接 Broker（当前仅连接 NameServer）
+1. ACL 请求已支持 HMAC-SHA1 签名；ACL CRUD 需 Broker 开启认证/授权后才能端到端验证
+2. 发送测试消息使用固定生产者组 `rocketmq-dashboard-desktop`；开启 ACL 的集群需为该组和 Topic 配置 Pub 权限
 3. 某些统计数据需要从多个 Broker 聚合
 4. 测试集群（192.168.153.149:9876）未启用消息轨迹（无 `RMQ_SYS_TRACE_TOPIC` 路由），trace 端到端需在 `traceTopicEnable=true` 的 Broker 上复验
 

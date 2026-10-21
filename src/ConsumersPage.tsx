@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Users, RefreshCw, Search, RotateCcw, Radio, List, X } from 'lucide-react'
 import type {
@@ -8,18 +8,23 @@ import type {
 } from './types'
 import Pagination from './components/Pagination'
 import ErrorNotice from './components/ErrorNotice'
+import LoadingMask from './components/LoadingMask'
+import Select from './components/Select'
+import { filterUserTopics } from './utils/topics'
 import { usePagination } from './hooks/usePagination'
 import { useI18n } from './i18n'
 
 interface ConsumersPageProps {
   connected: boolean
+  active?: boolean
 }
 
 type ResetType = 'max' | 'min' | 'offset'
 
-export default function ConsumersPage({ connected }: ConsumersPageProps) {
+export default function ConsumersPage({ connected, active = true }: ConsumersPageProps) {
   const { t } = useI18n()
   const [groups, setGroups] = useState<string[]>([])
+  const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -46,6 +51,27 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
   const [resetting, setResetting] = useState(false)
   const [resetMessage, setResetMessage] = useState<string | null>(null)
 
+  // Consumer group listing has no status field; probe each group's connection
+  // list (bounded concurrency) to tag online/offline in the list.
+  const loadStatuses = async (list: string[]) => {
+    const entries: Array<[string, boolean]> = []
+    const queue = [...list]
+    const worker = async () => {
+      for (;;) {
+        const group = queue.shift()
+        if (!group) return
+        try {
+          const result = await invoke<ConsumerConnection | null>('get_consumer_connections', { group })
+          entries.push([group, result !== null])
+        } catch {
+          entries.push([group, false])
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(6, list.length) }, () => worker()))
+    setOnlineMap(Object.fromEntries(entries))
+  }
+
   const loadGroups = async () => {
     if (!connected) return
     setLoading(true)
@@ -53,6 +79,8 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
     try {
       const result = await invoke<string[]>('get_consumer_groups')
       setGroups(result)
+      setOnlineMap({})
+      void loadStatuses(result)
     } catch (err) {
       setError(err as string)
     } finally {
@@ -115,6 +143,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
     try {
       const result = await invoke<ConsumerConnection | null>('get_consumer_connections', { group })
+      setOnlineMap((previous) => ({ ...previous, [group]: result !== null }))
       if (result) {
         setConnection(result)
         const subscribed = Object.keys(result.subscriptionTable ?? {}).sort()
@@ -147,7 +176,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
   const openReset = () => {
     if (!selectedGroup) return
-    const candidates = subscriptionTopics.length > 0 ? subscriptionTopics : allTopics
+    const candidates = subscriptionTopics.length > 0 ? subscriptionTopics : filterUserTopics(allTopics)
     setResetTopic(topic || candidates[0] || '')
     setResetQueue('all')
     setResetType('max')
@@ -189,13 +218,13 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
   }
 
   useEffect(() => {
-    if (!selectedGroup || !topic) return
+    if (!selectedGroup || !topic || !active) return
     const timer = setInterval(() => {
       // Background refresh: keep the current table on screen while polling.
       loadProgress(selectedGroup, topic, true)
     }, 5000)
     return () => clearInterval(timer)
-  }, [selectedGroup, topic])
+  }, [selectedGroup, topic, active])
 
   useEffect(() => {
     if (!showReset) return
@@ -212,6 +241,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
       loadAllTopics()
     } else {
       setGroups([])
+      setOnlineMap({})
       setAllTopics([])
       setSelectedGroup(null)
       setConnection(null)
@@ -228,7 +258,12 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
   const totalLag = progress.reduce((sum, row) => sum + row.lag, 0)
   const maxLag = progress.reduce((max, row) => Math.max(max, row.lag), 0)
-  const topicOptions = subscriptionTopics.length > 0 ? subscriptionTopics : allTopics
+  // Online groups expose their exact subscription table. Offline groups have no
+  // broker API to list topics per group, so fall back to user topics only.
+  const topicOptions = useMemo(() => {
+    const source = subscriptionTopics.length > 0 ? subscriptionTopics : filterUserTopics(allTopics)
+    return [...new Set(source)].sort((a, b) => a.localeCompare(b))
+  }, [subscriptionTopics, allTopics])
   const resetQueueOptions =
     resetTopic === topic ? Array.from(new Set(progress.map((row) => row.queueId))).sort((a, b) => a - b) : []
 
@@ -280,13 +315,8 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
         <div className="text-center py-12 text-slate-400">
           {t('Please connect to RocketMQ to view consumer groups')}
         </div>
-      ) : loading ? (
-        <div className="text-center py-12 text-slate-400">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
-          {t('Loading consumer groups...')}
-        </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="rmq-loading-wrap grid grid-cols-3 gap-4">
           {/* Group list */}
           <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
             <div className="px-5 py-4 bg-slate-900 text-slate-400 text-sm font-medium">
@@ -294,7 +324,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
             </div>
             <div className="max-h-[32rem] overflow-y-auto divide-y divide-slate-700">
               {filteredGroups.length === 0 ? (
-                <div className="text-center py-8 text-slate-400 text-sm">
+                <div className="text-center py-14 text-slate-400 text-sm">
                   {searchQuery ? t('No groups match your search') : t('No consumer groups found')}
                 </div>
               ) : (
@@ -308,7 +338,20 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                         : 'text-slate-200 hover:bg-slate-750'
                     }`}
                   >
-                    {group}
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate">{group}</span>
+                      {onlineMap[group] !== undefined && (
+                        <span
+                          className={`shrink-0 rounded px-2 py-0.5 text-xs ${
+                            onlineMap[group]
+                              ? 'bg-green-500/10 text-green-400'
+                              : 'bg-slate-700 text-slate-300'
+                          }`}
+                        >
+                          {t(onlineMap[group] ? 'Online' : 'Offline')}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 ))
               )}
@@ -424,18 +467,17 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                       {t('Consume Progress')}
                     </div>
                     <div className="flex items-center gap-2">
-                      <select
+                      <Select
+                        inline
+                        searchable
+                        searchPlaceholder={t('Filter topics...')}
+                        emptyLabel={t('No matching topics')}
                         value={topic}
-                        onChange={(e) => handleTopicChange(e.target.value)}
-                        className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-cyan-500"
-                      >
-                        <option value="">{t('Select a topic...')}</option>
-                        {topicOptions.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
+                        options={topicOptions.map((option) => ({ value: option, label: option }))}
+                        onChange={handleTopicChange}
+                        placeholder={t('Select a topic...')}
+                        ariaLabel={t('Topic')}
+                      />
                       <button
                         onClick={() => selectedGroup && topic && loadProgress(selectedGroup, topic)}
                         disabled={!topic || progressLoading}
@@ -452,9 +494,9 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                   )}
 
                   {progressLoading && progress.length === 0 ? (
-                    <div className="text-center py-10 text-slate-400 text-sm">{t('Loading progress...')}</div>
+                    <div className="text-center py-14 text-slate-400 text-sm">{t('Loading progress...')}</div>
                   ) : progress.length === 0 ? (
-                    <div className="text-center py-10 text-slate-400 text-sm">
+                    <div className="text-center py-14 text-slate-400 text-sm">
                       {topic ? t('No progress data for this topic') : t('Select a topic to view consume progress')}
                     </div>
                   ) : (
@@ -502,7 +544,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
                     Online Connections
                   </div>
                   {!connection || connection.connectionSet.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 text-sm">
+                    <div className="text-center py-14 text-slate-400 text-sm">
                       {connectionLoading ? 'Loading connections...' : 'No online clients'}
                     </div>
                   ) : (
@@ -531,6 +573,7 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
               </>
             )}
           </div>
+          <LoadingMask active={loading} />
         </div>
       )}
 
@@ -554,47 +597,46 @@ export default function ConsumersPage({ connected }: ConsumersPageProps) {
 
             <div>
               <label className="text-sm text-slate-400 block mb-1">{t('Topic')}</label>
-              <select
+              <Select
+                searchable
+                searchPlaceholder={t('Filter topics...')}
+                emptyLabel={t('No matching topics')}
                 value={resetTopic}
-                onChange={(e) => setResetTopic(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
-              >
-                <option value="">{t('Select a topic...')}</option>
-                {topicOptions.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+                options={topicOptions.map((option) => ({ value: option, label: option }))}
+                onChange={setResetTopic}
+                placeholder={t('Select a topic...')}
+                ariaLabel={t('Topic')}
+              />
             </div>
 
             <div>
               <label className="text-sm text-slate-400 block mb-1">{t('Queue')}</label>
-              <select
+              <Select
                 value={resetQueue}
-                onChange={(e) => setResetQueue(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
-              >
-                <option value="all">{t('All queues')}</option>
-                {resetQueueOptions.map((q) => (
-                  <option key={q} value={q}>
-                    {t('Queue {id}', { id: q })}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: 'all', label: t('All queues') },
+                  ...resetQueueOptions.map((queue) => ({
+                    value: String(queue),
+                    label: t('Queue {id}', { id: queue }),
+                  })),
+                ]}
+                onChange={setResetQueue}
+                ariaLabel={t('Queue')}
+              />
             </div>
 
             <div>
               <label className="text-sm text-slate-400 block mb-1">{t('Reset To')}</label>
-              <select
+              <Select
                 value={resetType}
-                onChange={(e) => setResetType(e.target.value as ResetType)}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
-              >
-                <option value="max">{t('Latest offset (max)')}</option>
-                <option value="min">{t('Earliest offset (min)')}</option>
-                <option value="offset">{t('Custom offset')}</option>
-              </select>
+                options={[
+                  { value: 'max', label: t('Latest offset (max)') },
+                  { value: 'min', label: t('Earliest offset (min)') },
+                  { value: 'offset', label: t('Custom offset') },
+                ]}
+                onChange={(value) => setResetType(value as ResetType)}
+                ariaLabel={t('Offset type')}
+              />
             </div>
 
             {resetType === 'offset' && (

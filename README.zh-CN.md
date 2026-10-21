@@ -32,7 +32,7 @@
 ### ✅ 已完成
 - **连接管理** - 连接/断开 NameServer，可选 ACL 凭据
 - **集群管理** - Broker 拓扑、运行时信息、Produce/Consume TPS 趋势
-- **Topic 管理** - 列表、路由、新建、删除
+- **Topic 管理** - 列表、路由、状态、新建、更新配置、删除、发送测试消息
 - **Consumer 管理** - 消费组、逐队列进度、在线实例、重置位点、消费 TPS
 - **消息查询** - Message ID / Key / Topic + 时间范围
 - **消息轨迹** - Pub / SubAfter / EndTransaction / Recall 时间轴（需开启 trace）
@@ -40,7 +40,7 @@
 - **ACL** - ACL 2.0 用户与规则 CRUD（需开启 ACL）
 
 ### 🚧 开发中
-- 额外运维工具（发送测试消息 / 清理过期消息）
+- 清理过期消息等额外运维工具
 - 安装包在目标平台上的完整验证
 
 ### 与 rocketmq-dashboard 功能对照
@@ -52,7 +52,7 @@
 | OPS | ✅ | Nameserver 管理、多集群切换 |
 | Dashboard | ✅ | 概览指标 + TPS 趋势图 |
 | Cluster | ✅ | 独立页面、运行时信息、拓扑 |
-| Topic | ✅ | 列表、路由、新建、删除（更新配置 ❌） |
+| Topic | ✅ | 列表、路由、状态、新建、更新配置、删除、发送测试消息 |
 | Consumer | ✅ | 组列表、进度、在线实例、重置位点 |
 | Producer | ✅ | 生产者组与在线连接 |
 | Message | ✅ | 按 Topic/Key/ID/时间查询 |
@@ -104,6 +104,8 @@ npm run build:desktop
 
 3. **管理 Topic**
    - 点击"Topics"查看所有主题
+   - 查看路由与逐队列状态，更新读写队列数和权限
+   - 发送测试消息（Tag / Key / 队列 / Broker 可选）
 
 4. **监控 Consumer**
    - 点击"Consumers"查看消费进度

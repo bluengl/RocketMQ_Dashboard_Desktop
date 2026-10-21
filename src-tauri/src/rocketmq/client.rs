@@ -15,11 +15,13 @@ use super::protocol::{
     ProducerTableInfo,
     TraceNode, ConsumerStatus, TraceRecord,
     GET_BROKER_CLUSTER_INFO, GET_ALL_TOPIC_LIST_FROM_NAMESERVER, GET_ROUTEINFO_BY_TOPIC,
-    QUERY_MESSAGE, VIEW_MESSAGE_BY_ID, SEARCH_OFFSET_BY_TIMESTAMP, UPDATE_AND_CREATE_TOPIC,
+    QUERY_MESSAGE, PULL_MESSAGE, VIEW_MESSAGE_BY_ID, SEARCH_OFFSET_BY_TIMESTAMP, UPDATE_AND_CREATE_TOPIC,
     DELETE_TOPIC_IN_NAMESRV, DELETE_TOPIC_IN_BROKER, SUCCESS,
     GET_ALL_SUBSCRIPTIONGROUP_CONFIG, GET_CONSUMER_CONNECTION_LIST, QUERY_CONSUMER_OFFSET,
     UPDATE_CONSUMER_OFFSET, GET_MAX_OFFSET, GET_MIN_OFFSET,
     GET_PRODUCER_CONNECTION_LIST, GET_ALL_PRODUCER_INFO,
+    SEND_MESSAGE, SEND_MESSAGE_V2, REQUEST_CODE_NOT_SUPPORTED,
+    TopicQueueStatus, TopicStatus, TopicUpdateResult, SendMessageResult,
     DEFAULT_TRACE_TOPIC, TRACE_CONTENT_SPLITOR, TRACE_FIELD_SPLITOR,
     TOPIC_NOT_EXIST, QUERY_NOT_FOUND, NO_MESSAGE,
     GET_BROKER_RUNTIME_INFO, VIEW_BROKER_STATS_DATA, GET_BROKER_CONSUME_STATS,
@@ -427,56 +429,105 @@ impl RocketMQClient {
             .ok_or_else(|| "No offset in search response".to_string())
     }
 
+    fn pull_from(
+        &self,
+        addr: &str,
+        topic: &str,
+        queue_id: i32,
+        queue_offset: i64,
+        max_num: i32,
+    ) -> Result<(Vec<MessageExt>, i64), String> {
+        let mut ext = HashMap::new();
+        ext.insert("consumerGroup".to_string(), "rocketmq-dashboard-desktop".to_string());
+        ext.insert("topic".to_string(), topic.to_string());
+        ext.insert("queueId".to_string(), queue_id.to_string());
+        ext.insert("queueOffset".to_string(), queue_offset.to_string());
+        ext.insert("maxMsgNums".to_string(), max_num.to_string());
+        // PullSysFlag: subscription flag (0x4)
+        ext.insert("sysFlag".to_string(), "4".to_string());
+        ext.insert("commitOffset".to_string(), "0".to_string());
+        ext.insert("suspendTimeoutMillis".to_string(), "0".to_string());
+        ext.insert("subscription".to_string(), "*".to_string());
+        ext.insert("subVersion".to_string(), "0".to_string());
+        ext.insert("expressionType".to_string(), "TAG".to_string());
+
+        let command = RemotingCommand::new_request(PULL_MESSAGE, next_opaque()).with_ext_fields(ext);
+        let (response, body) = self.send_command_to(addr, &command)?;
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Pull message failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        let next_offset = response
+            .ext_fields
+            .as_ref()
+            .and_then(|fields| fields.get("nextBeginOffset"))
+            .and_then(|value| value.parse::<i64>().ok())
+            .unwrap_or(queue_offset);
+
+        Ok((parse_messages(&body)?, next_offset))
+    }
+
+    /// QUERY_MESSAGE only supports key lookups, so a time-range scan uses
+    /// PULL_MESSAGE per queue, mirroring the official dashboard implementation.
     pub fn query_message_by_time(&self, topic: &str, begin_ts: i64, end_ts: i64) -> Result<Vec<MessageExt>, String> {
         let Some(route) = self.route_if_topic_exists(topic)? else {
             return Ok(Vec::new());
         };
-        let broker_addr = route
-            .broker_datas
-            .first()
-            .and_then(|broker| broker.broker_addrs.get(&0))
-            .cloned()
-            .ok_or_else(|| format!("No broker found for topic: {}", topic))?;
-        let read_queue_nums = route.queue_datas.first().map(|q| q.read_queue_nums).unwrap_or(4) as i32;
         let mut all = Vec::new();
 
-        for queue_id in 0..read_queue_nums {
-            let begin_offset = match self.search_offset(&broker_addr, topic, queue_id, begin_ts) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            let end_offset = match self.search_offset(&broker_addr, topic, queue_id, end_ts) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            if begin_offset < 0 || end_offset < begin_offset {
+        for broker in &route.broker_datas {
+            let Some(addr) = broker.broker_addrs.get(&0).cloned() else {
                 continue;
-            }
-            let max_num = (end_offset - begin_offset + 1).min(32);
-            if max_num <= 0 {
+            };
+            let Some(queue_data) = route
+                .queue_datas
+                .iter()
+                .find(|queue| queue.broker_name == broker.broker_name)
+            else {
                 continue;
-            }
+            };
 
-            let mut ext = HashMap::new();
-            ext.insert("topic".to_string(), topic.to_string());
-            ext.insert("queueId".to_string(), queue_id.to_string());
-            ext.insert("offset".to_string(), begin_offset.to_string());
-            ext.insert("maxNum".to_string(), max_num.to_string());
-            ext.insert("beginTimestamp".to_string(), begin_ts.to_string());
-            ext.insert("endTimestamp".to_string(), end_ts.to_string());
-            let command = RemotingCommand::new_request(QUERY_MESSAGE, next_opaque()).with_ext_fields(ext);
-            let (response, body) = match self.send_command_to(&broker_addr, &command) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            if response.code != SUCCESS {
-                continue;
-            }
-            if let Ok(mut msgs) = parse_messages(&body) {
-                all.append(&mut msgs);
+            for queue_id in 0..queue_data.read_queue_nums {
+                let begin_offset = self.search_offset(&addr, topic, queue_id, begin_ts).unwrap_or(0);
+                let end_offset = match self.search_offset(&addr, topic, queue_id, end_ts) {
+                    Ok(value) => value,
+                    Err(_) => continue,
+                };
+                if end_offset < begin_offset {
+                    continue;
+                }
+
+                let mut offset = begin_offset;
+                let mut pulls = 0;
+                while offset <= end_offset && pulls < 64 && all.len() < 2000 {
+                    pulls += 1;
+                    let (batch, next_offset) = match self.pull_from(&addr, topic, queue_id, offset, 32) {
+                        Ok(value) => value,
+                        Err(_) => break,
+                    };
+                    if batch.is_empty() {
+                        break;
+                    }
+                    for message in batch {
+                        if let Some(timestamp) = message.store_timestamp {
+                            if timestamp >= begin_ts && timestamp <= end_ts {
+                                all.push(message);
+                            }
+                        }
+                    }
+                    if next_offset <= offset {
+                        break;
+                    }
+                    offset = next_offset;
+                }
             }
         }
 
+        all.sort_by_key(|message| std::cmp::Reverse(message.store_timestamp.unwrap_or(0)));
         Ok(all)
     }
 
@@ -672,6 +723,280 @@ impl RocketMQClient {
         }
 
         Ok(())
+    }
+
+    pub fn update_topic(
+        &self,
+        topic: &str,
+        read_queue_nums: i32,
+        write_queue_nums: i32,
+        perm: i32,
+        broker_addr: Option<&str>,
+    ) -> Result<TopicUpdateResult, String> {
+        if read_queue_nums <= 0 || write_queue_nums <= 0 {
+            return Err("Queue counts must be greater than zero".to_string());
+        }
+        if perm < 0 || perm > 7 {
+            return Err("Permission must be between 0 and 7".to_string());
+        }
+
+        let route = self.get_route_info_by_topic(topic)?;
+        let mut targets: Vec<(String, String)> = Vec::new();
+
+        match broker_addr {
+            Some(addr) => {
+                let name = route
+                    .broker_datas
+                    .iter()
+                    .find(|b| b.broker_addrs.get(&0).map(|a| a == addr).unwrap_or(false))
+                    .map(|b| b.broker_name.clone())
+                    .unwrap_or_else(|| addr.to_string());
+                targets.push((name, addr.to_string()));
+            }
+            None => {
+                for broker in &route.broker_datas {
+                    if let Some(addr) = broker.broker_addrs.get(&0) {
+                        targets.push((broker.broker_name.clone(), addr.clone()));
+                    }
+                }
+            }
+        }
+
+        if targets.is_empty() {
+            return Err(format!("No master broker found for topic: {}", topic));
+        }
+
+        let mut updated_brokers = Vec::new();
+        let mut errors = Vec::new();
+        for (name, addr) in targets {
+            let mut ext = HashMap::new();
+            ext.insert("topic".to_string(), topic.to_string());
+            ext.insert("defaultTopic".to_string(), "TBW102".to_string());
+            ext.insert("readQueueNums".to_string(), read_queue_nums.to_string());
+            ext.insert("writeQueueNums".to_string(), write_queue_nums.to_string());
+            ext.insert("perm".to_string(), perm.to_string());
+            ext.insert("topicFilterType".to_string(), "SINGLE_TAG".to_string());
+            ext.insert("order".to_string(), "false".to_string());
+
+            let command = RemotingCommand::new_request(UPDATE_AND_CREATE_TOPIC, next_opaque())
+                .with_ext_fields(ext);
+            match self.send_command_to(&addr, &command) {
+                Ok((response, _)) if response.code == SUCCESS => updated_brokers.push(name),
+                Ok((response, _)) => errors.push(format!(
+                    "{}: code={}, remark={:?}",
+                    addr, response.code, response.remark
+                )),
+                Err(error) => errors.push(format!("{}: {}", addr, error)),
+            }
+        }
+
+        if updated_brokers.is_empty() {
+            return Err(format!("Update topic failed: {}", errors.join("; ")));
+        }
+
+        Ok(TopicUpdateResult {
+            updated_brokers,
+            errors,
+        })
+    }
+
+    pub fn get_topic_status(&self, topic: &str) -> Result<TopicStatus, String> {
+        let route = self.get_route_info_by_topic(topic)?;
+        let mut queues = Vec::new();
+        let mut errors = Vec::new();
+        let mut total_messages = 0i64;
+
+        for queue_data in &route.queue_datas {
+            let addr = match route
+                .broker_datas
+                .iter()
+                .find(|b| b.broker_name == queue_data.broker_name)
+                .and_then(|b| b.broker_addrs.get(&0).cloned())
+            {
+                Some(addr) => addr,
+                None => {
+                    errors.push(format!(
+                        "{}: no master broker address",
+                        queue_data.broker_name
+                    ));
+                    continue;
+                }
+            };
+
+            for queue_id in 0..queue_data.read_queue_nums {
+                let min_offset = match self.min_offset(&addr, topic, queue_id) {
+                    Ok(v) => v,
+                    Err(error) => {
+                        errors.push(format!("{} queue {} min: {}", addr, queue_id, error));
+                        continue;
+                    }
+                };
+                let max_offset = match self.max_offset(&addr, topic, queue_id) {
+                    Ok(v) => v,
+                    Err(error) => {
+                        errors.push(format!("{} queue {} max: {}", addr, queue_id, error));
+                        continue;
+                    }
+                };
+                let message_count = (max_offset - min_offset).max(0);
+                total_messages += message_count;
+
+                queues.push(TopicQueueStatus {
+                    broker_name: queue_data.broker_name.clone(),
+                    broker_addr: addr.clone(),
+                    queue_id,
+                    min_offset,
+                    max_offset,
+                    message_count,
+                });
+            }
+        }
+
+        if queues.is_empty() && !errors.is_empty() {
+            return Err(format!("Get topic status failed: {}", errors.join("; ")));
+        }
+
+        Ok(TopicStatus {
+            topic: topic.to_string(),
+            queues,
+            total_messages,
+            errors,
+        })
+    }
+
+    pub fn send_message(
+        &self,
+        topic: &str,
+        body: &str,
+        tag: Option<&str>,
+        key: Option<&str>,
+        queue_id: Option<i32>,
+        broker_name: Option<&str>,
+    ) -> Result<SendMessageResult, String> {
+        if body.len() > 4 * 1024 * 1024 {
+            return Err("Message body must not exceed 4 MB".to_string());
+        }
+
+        let route = self.get_route_info_by_topic(topic)?;
+        let broker = match broker_name {
+            Some(name) => route
+                .broker_datas
+                .iter()
+                .find(|b| b.broker_name == name)
+                .ok_or_else(|| format!("Broker '{}' does not carry topic '{}'", name, topic))?,
+            None => route
+                .broker_datas
+                .first()
+                .ok_or_else(|| format!("No broker found for topic: {}", topic))?,
+        };
+
+        let addr = broker
+            .broker_addrs
+            .get(&0)
+            .cloned()
+            .ok_or_else(|| format!("No master broker for topic: {}", topic))?;
+        let broker_name = broker.broker_name.clone();
+
+        let write_queue_nums = route
+            .queue_datas
+            .iter()
+            .find(|q| q.broker_name == broker_name)
+            .map(|q| q.write_queue_nums)
+            .unwrap_or(1)
+            .max(1);
+
+        let queue_id = match queue_id {
+            Some(q) if q >= 0 && q < write_queue_nums => q,
+            Some(q) => {
+                return Err(format!(
+                    "Queue ID {} is out of range (0..{})",
+                    q,
+                    write_queue_nums - 1
+                ))
+            }
+            None => (now_millis().rem_euclid(write_queue_nums as i64)) as i32,
+        };
+
+        let mut properties = String::from("WAIT\u{0001}true");
+        if let Some(tag) = tag.filter(|t| !t.is_empty()) {
+            validate_property_value("tag", tag)?;
+            properties.push_str(&format!("\u{0002}TAGS\u{0001}{}", tag));
+        }
+        if let Some(key) = key.filter(|k| !k.is_empty()) {
+            validate_property_value("key", key)?;
+            properties.push_str(&format!("\u{0002}KEYS\u{0001}{}", key));
+        }
+
+        let born_timestamp = now_millis();
+        let producer_group = "rocketmq-dashboard-desktop";
+
+        // RocketMQ SendMessageRequestHeaderV2 short field mapping:
+        // a producerGroup, b topic, c defaultTopic, d defaultTopicQueueNums,
+        // e queueId, f sysFlag, g bornTimestamp, h flag, i properties,
+        // j reconsumeTimes, k unitMode, l maxReconsumeTimes, m batch, n waitStoreMsgOK.
+        let mut ext = HashMap::new();
+        ext.insert("a".to_string(), producer_group.to_string());
+        ext.insert("b".to_string(), topic.to_string());
+        ext.insert("c".to_string(), "TBW102".to_string());
+        ext.insert("d".to_string(), "4".to_string());
+        ext.insert("e".to_string(), queue_id.to_string());
+        ext.insert("f".to_string(), "0".to_string());
+        ext.insert("g".to_string(), born_timestamp.to_string());
+        ext.insert("h".to_string(), "0".to_string());
+        ext.insert("i".to_string(), properties.clone());
+        ext.insert("j".to_string(), "0".to_string());
+        ext.insert("k".to_string(), "false".to_string());
+        ext.insert("l".to_string(), "0".to_string());
+        ext.insert("m".to_string(), "false".to_string());
+        ext.insert("n".to_string(), "true".to_string());
+
+        let command = RemotingCommand::new_request(SEND_MESSAGE_V2, next_opaque())
+            .with_ext_fields(ext);
+        let (mut response, _) = self.send_raw_to(&addr, &command, body.as_bytes())?;
+
+        if response.code == REQUEST_CODE_NOT_SUPPORTED {
+            // Brokers older than 4.6 only understand SEND_MESSAGE with long field names.
+            let mut legacy = HashMap::new();
+            legacy.insert("producerGroup".to_string(), producer_group.to_string());
+            legacy.insert("topic".to_string(), topic.to_string());
+            legacy.insert("defaultTopic".to_string(), "TBW102".to_string());
+            legacy.insert("defaultTopicQueueNums".to_string(), "4".to_string());
+            legacy.insert("queueId".to_string(), queue_id.to_string());
+            legacy.insert("sysFlag".to_string(), "0".to_string());
+            legacy.insert("bornTimestamp".to_string(), born_timestamp.to_string());
+            legacy.insert("flag".to_string(), "0".to_string());
+            legacy.insert("properties".to_string(), properties);
+            legacy.insert("reconsumeTimes".to_string(), "0".to_string());
+            legacy.insert("unitMode".to_string(), "false".to_string());
+            legacy.insert("maxReconsumeTimes".to_string(), "0".to_string());
+            legacy.insert("batch".to_string(), "false".to_string());
+            legacy.insert("waitStoreMsgOK".to_string(), "true".to_string());
+            let command = RemotingCommand::new_request(SEND_MESSAGE, next_opaque())
+                .with_ext_fields(legacy);
+            response = self.send_raw_to(&addr, &command, body.as_bytes())?.0;
+        }
+
+        if response.code != SUCCESS {
+            return Err(format!(
+                "Send message failed: code={}, remark={:?}",
+                response.code, response.remark
+            ));
+        }
+
+        let fields = response.ext_fields.unwrap_or_default();
+        Ok(SendMessageResult {
+            msg_id: fields.get("msgId").cloned().unwrap_or_default(),
+            queue_id: fields
+                .get("queueId")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(queue_id),
+            queue_offset: fields
+                .get("queueOffset")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(-1),
+            broker_name,
+            broker_addr: addr,
+        })
     }
 
     fn broker_master_addrs(&self) -> Result<Vec<String>, String> {
@@ -1644,6 +1969,18 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+/// RocketMQ serializes message properties as `key\u{0001}value\u{0002}...`,
+/// so values must not contain either separator.
+fn validate_property_value(field: &str, value: &str) -> Result<(), String> {
+    if value.contains('\u{0001}') || value.contains('\u{0002}') {
+        return Err(format!(
+            "Message {} must not contain control characters \\u0001 or \\u0002",
+            field
+        ));
+    }
+    Ok(())
+}
+
 fn describe_failure(context: &str, code: i32, remark: &Option<String>) -> String {
     match remark {
         Some(remark) => format!("{}: code={}, {}", context, code, remark),
@@ -1651,10 +1988,13 @@ fn describe_failure(context: &str, code: i32, remark: &Option<String>) -> String
     }
 }
 
-fn parse_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {    if body.is_empty() {
+fn parse_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {
+    if body.is_empty() {
         return Ok(Vec::new());
     }
 
+    // Some setups serialize messages as JSON; brokers normally return the raw
+    // commitlog message format, so fall back to binary decoding.
     if let Ok(messages) = serde_json::from_slice::<Vec<MessageExt>>(body) {
         return Ok(messages);
     }
@@ -1663,7 +2003,127 @@ fn parse_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {    if body.i
         return Ok(vec![message]);
     }
 
-    Err("Failed to parse message response".to_string())
+    decode_store_messages(body)
+}
+
+const MIN_STORE_MESSAGE_SIZE: usize = 91; // 88-byte fixed header + topic/properties lengths
+
+fn decode_store_messages(body: &[u8]) -> Result<Vec<MessageExt>, String> {
+    let mut messages = Vec::new();
+    let mut position = 0usize;
+    while position + 4 <= body.len() {
+        let total_size = i32::from_be_bytes([
+            body[position],
+            body[position + 1],
+            body[position + 2],
+            body[position + 3],
+        ]) as usize;
+        if total_size < MIN_STORE_MESSAGE_SIZE || position + total_size > body.len() {
+            break;
+        }
+        messages.push(decode_store_message(&body[position..position + total_size])?);
+        position += total_size;
+    }
+
+    if messages.is_empty() {
+        Err("Failed to parse message response".to_string())
+    } else {
+        Ok(messages)
+    }
+}
+
+fn decode_store_message(data: &[u8]) -> Result<MessageExt, String> {
+    if data.len() < MIN_STORE_MESSAGE_SIZE {
+        return Err("Message body too short".to_string());
+    }
+
+    let read_i32 = |offset: usize| i32::from_be_bytes(data[offset..offset + 4].try_into().unwrap());
+    let read_i64 = |offset: usize| i64::from_be_bytes(data[offset..offset + 8].try_into().unwrap());
+
+    let queue_id = read_i32(12);
+    let flag = read_i32(16);
+    let queue_offset = read_i64(20);
+    let physical_offset = read_i64(28);
+    let sys_flag = read_i32(36);
+    let born_timestamp = read_i64(40);
+    let born_host = format_message_host(&data[48..56]);
+    let store_timestamp = read_i64(56);
+    let store_host_bytes = &data[64..72];
+    let store_host = format_message_host(store_host_bytes);
+    let reconsume_times = read_i32(72);
+    let body_length = read_i32(84) as usize;
+
+    let body_start = 88usize;
+    if body_start + body_length + 3 > data.len() {
+        return Err("Message body length out of range".to_string());
+    }
+    let body = &data[body_start..body_start + body_length];
+
+    let topic_start = body_start + body_length;
+    let topic_length = data[topic_start] as usize;
+    if topic_start + 1 + topic_length + 2 > data.len() {
+        return Err("Message topic length out of range".to_string());
+    }
+    let topic = String::from_utf8_lossy(&data[topic_start + 1..topic_start + 1 + topic_length]).to_string();
+
+    let properties_start = topic_start + 1 + topic_length;
+    let properties_length =
+        u16::from_be_bytes([data[properties_start], data[properties_start + 1]]) as usize;
+    if properties_start + 2 + properties_length > data.len() {
+        return Err("Message properties length out of range".to_string());
+    }
+    let properties_text =
+        String::from_utf8_lossy(&data[properties_start + 2..properties_start + 2 + properties_length]);
+
+    Ok(MessageExt {
+        topic: Some(topic),
+        flag: Some(flag),
+        properties: Some(parse_message_properties(&properties_text)),
+        body: Some(general_purpose::STANDARD.encode(body)),
+        queue_id: Some(queue_id),
+        queue_offset: Some(queue_offset),
+        commit_log_offset: Some(physical_offset),
+        sys_flag: Some(sys_flag),
+        born_timestamp: Some(born_timestamp),
+        born_host: Some(born_host),
+        store_timestamp: Some(store_timestamp),
+        store_host: Some(store_host),
+        msg_id: Some(build_message_id(store_host_bytes, physical_offset)),
+        reconsume_times: Some(reconsume_times),
+    })
+}
+
+fn format_message_host(bytes: &[u8]) -> String {
+    if bytes.len() < 8 {
+        return String::new();
+    }
+    format!(
+        "{}.{}.{}.{}:{}",
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]])
+    )
+}
+
+fn build_message_id(store_host: &[u8], physical_offset: i64) -> String {
+    let mut bytes = Vec::with_capacity(16);
+    bytes.extend_from_slice(&store_host[..8]);
+    bytes.extend_from_slice(&physical_offset.to_be_bytes());
+    bytes.iter().map(|byte| format!("{:02X}", byte)).collect()
+}
+
+fn parse_message_properties(raw: &str) -> HashMap<String, String> {
+    raw.split('\u{0002}')
+        .filter(|entry| !entry.is_empty())
+        .filter_map(|entry| {
+            let mut parts = entry.splitn(2, '\u{0001}');
+            let key = parts.next()?;
+            let value = parts.next()?;
+            Some((key.to_string(), value.to_string()))
+        })
+        .collect()
 }
 
 fn decode_msg_id(msg_id: &str) -> Result<(String, i64), String> {
@@ -1726,6 +2186,13 @@ mod smoke {
     use super::*;
 
     #[test]
+    fn rejects_property_separators() {
+        assert!(validate_property_value("tag", "ok").is_ok());
+        assert!(validate_property_value("tag", "bad\u{0001}value").is_err());
+        assert!(validate_property_value("key", "bad\u{0002}value").is_err());
+    }
+
+    #[test]
     fn parses_trace_contexts() {
         let msg_id = "AC14000A00002A9F0000000000000001";
         let pub_ctx = [
@@ -1780,5 +2247,104 @@ mod smoke {
         parse_trace_body(&encoded, Some("OTHER"), &mut filtered);
         assert!(filtered.nodes.is_empty());
         assert!(filtered.consumer_status.is_empty());
+    }
+}
+
+/// Live end-to-end checks. Run explicitly against a reachable test cluster:
+/// `cargo test live_topic_lifecycle -- --ignored --nocapture`
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    fn test_client() -> RocketMQClient {
+        RocketMQClient::new(ConnectionConfig {
+            name_server_addrs: vec!["192.168.153.149:9876".to_string()],
+            acl_enabled: false,
+            access_key: None,
+            secret_key: None,
+        })
+        .expect("client")
+    }
+
+    #[test]
+    #[ignore = "requires a live RocketMQ test cluster at 192.168.153.149:9876"]
+    fn live_topic_status_readonly() {
+        let client = test_client();
+        let topics = client.get_topic_list().expect("topic list");
+        let topic = topics
+            .iter()
+            .find(|t| {
+                !t.starts_with('%')
+                    && !t.starts_with("TBW")
+                    && !t.starts_with("RMQ_SYS")
+                    && !t.starts_with("rmq_sys")
+                    && !t.starts_with("SCHEDULE_TOPIC")
+            })
+            .cloned()
+            .expect("a user topic");
+        let status = client.get_topic_status(&topic).expect("topic status");
+        assert!(!status.queues.is_empty(), "no queues for {}", topic);
+        assert!(status.errors.is_empty(), "errors: {:?}", status.errors);
+        println!(
+            "status for {}: {} queues, {} messages",
+            topic,
+            status.queues.len(),
+            status.total_messages
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a live RocketMQ test cluster at 192.168.153.149:9876"]
+    fn live_topic_lifecycle_and_send() {
+        let client = test_client();
+        let topic = format!("ClaudeE2E_{}", now_millis());
+
+        let cluster = client.get_cluster_info().expect("cluster info");
+        let broker_addr = cluster
+            .brokers
+            .iter()
+            .find_map(|b| b.master_addr.clone())
+            .expect("master broker");
+
+        client
+            .create_topic(&topic, &broker_addr, 2, 2, 6)
+            .expect("create topic");
+
+        let mut route_ready = false;
+        for _ in 0..45 {
+            if client.get_route_info_by_topic(&topic).is_ok() {
+                route_ready = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        assert!(route_ready, "topic route was not registered in time");
+
+        let update = client
+            .update_topic(&topic, 4, 4, 6, None)
+            .expect("update topic");
+        assert!(!update.updated_brokers.is_empty());
+        assert!(update.errors.is_empty(), "update errors: {:?}", update.errors);
+
+        let sent = client
+            .send_message(&topic, "hello from the dashboard e2e test", Some("e2e"), Some("key-1"), None, None)
+            .expect("send message");
+        assert!(!sent.msg_id.is_empty(), "missing msgId");
+        assert!(sent.queue_offset >= 0, "missing queue offset: {:?}", sent);
+
+        std::thread::sleep(Duration::from_millis(500));
+        let route = client
+            .get_route_info_by_topic(&topic)
+            .expect("route after send");
+        let expected_queues: i32 = route.queue_datas.iter().map(|q| q.read_queue_nums).sum();
+        let status = client.get_topic_status(&topic).expect("topic status");
+        assert_eq!(status.queues.len() as i32, expected_queues);
+        assert!(
+            status.total_messages >= 1,
+            "expected at least one stored message, got {}",
+            status.total_messages
+        );
+
+        client.delete_topic(&topic).expect("delete topic");
     }
 }

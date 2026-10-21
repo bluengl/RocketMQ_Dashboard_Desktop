@@ -9,6 +9,8 @@ import type {
 import { errorMessage } from './utils/errors'
 import Pagination from './components/Pagination'
 import ErrorNotice from './components/ErrorNotice'
+import LoadingMask from './components/LoadingMask'
+import Select from './components/Select'
 import { usePagination } from './hooks/usePagination'
 import { useI18n } from './i18n'
 
@@ -418,12 +420,9 @@ export default function AclPage({ connected }: AclPageProps) {
         <div className="text-center py-12 text-slate-400">
           {t('Please connect to RocketMQ to manage ACL')}
         </div>
-      ) : loading ? (
-        <div className="text-center py-12 text-slate-400">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
-          {t('Loading ACL configuration...')}
-        </div>
-      ) : tab === 'users' ? (
+      ) : (
+        <div className="rmq-loading-wrap">
+          {tab === 'users' ? (
         <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -612,6 +611,9 @@ export default function AclPage({ connected }: AclPageProps) {
             onPageSizeChange={rulePager.setPageSize}
           />
         </div>
+          )}
+          <LoadingMask active={loading} />
+        </div>
       )}
 
       {showUserForm && (
@@ -648,32 +650,22 @@ export default function AclPage({ connected }: AclPageProps) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm text-slate-400 block mb-1">{t('User Type')}</label>
-                <select
+                <Select
                   value={userForm.userType}
-                  onChange={(e) => setUserForm({ ...userForm, userType: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
-                >
-                  {USER_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {t(type)}
-                    </option>
-                  ))}
-                </select>
+                  options={USER_TYPES.map((type) => ({ value: type, label: t(type) }))}
+                  onChange={(value) => setUserForm({ ...userForm, userType: value })}
+                  ariaLabel={t('User Type')}
+                />
               </div>
               <div>
                 <label className="text-sm text-slate-400 block mb-1">{t('Status')}</label>
-                <select
+                <Select
                   value={userForm.userStatus}
+                  options={USER_STATUSES.map((status) => ({ value: status, label: t(status) }))}
+                  onChange={(value) => setUserForm({ ...userForm, userStatus: value })}
                   disabled={!editingUser}
-                  onChange={(e) => setUserForm({ ...userForm, userStatus: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500 disabled:opacity-60"
-                >
-                  {USER_STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {t(status)}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel={t('Status')}
+                />
               </div>
             </div>
 
@@ -779,17 +771,12 @@ export default function AclPage({ connected }: AclPageProps) {
 
             <div>
               <label className="text-sm text-slate-400 block mb-1">{t('Decision')}</label>
-              <select
+              <Select
                 value={ruleForm.decision}
-                onChange={(e) => setRuleForm({ ...ruleForm, decision: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
-              >
-                {DECISIONS.map((decision) => (
-                  <option key={decision} value={decision}>
-                    {t(decision)}
-                  </option>
-                ))}
-              </select>
+                options={DECISIONS.map((decision) => ({ value: decision, label: t(decision) }))}
+                onChange={(value) => setRuleForm({ ...ruleForm, decision: value })}
+                ariaLabel={t('Decision')}
+              />
             </div>
 
             <p className="text-xs text-slate-500">

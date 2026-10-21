@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Activity, Database, List, MessageSquare, Users, Send, Shield, GitBranch, Settings, Moon, Sun, RadioTower, Languages, Unplug, Minus, Square, Copy, X } from 'lucide-react'
@@ -15,10 +15,19 @@ import type { ClusterProfile } from './types'
 import { errorMessage } from './utils/errors'
 import ErrorBoundary from './components/ErrorBoundary'
 import NameServerCombo from './components/NameServerCombo'
-import { addNameServerHistory } from './utils/nameServerHistory'
+import { addNameServerHistory, loadNameServerHistory } from './utils/nameServerHistory'
 import { useI18n } from './i18n'
 
 type Page = 'dashboard' | 'topics' | 'consumers' | 'producers' | 'messages' | 'cluster' | 'acl' | 'trace' | 'ops'
+
+// Keeps visited pages mounted so switching tabs preserves selections and loaded data.
+function PageSlot({ active, children }: { active: boolean; children: ReactNode }) {
+  return (
+    <div className="page-slot" style={{ display: active ? undefined : 'none' }} aria-hidden={!active}>
+      <ErrorBoundary>{children}</ErrorBoundary>
+    </div>
+  )
+}
 
 function App() {
   const { language, setLanguage, t } = useI18n()
@@ -31,7 +40,7 @@ function App() {
       return 'dark'
     }
   })
-  const [nameServer, setNameServer] = useState('')
+  const [nameServer, setNameServer] = useState(() => loadNameServerHistory()[0] ?? '')
   const [aclEnabled, setAclEnabled] = useState(false)
   const [accessKey, setAccessKey] = useState('')
   const [secretKey, setSecretKey] = useState('')
@@ -40,6 +49,13 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const [traceTarget, setTraceTarget] = useState<string | null>(null)
+  const [visitedPages, setVisitedPages] = useState<Page[]>(['dashboard'])
+
+  useEffect(() => {
+    setVisitedPages((previous) =>
+      previous.includes(currentPage) ? previous : [...previous, currentPage]
+    )
+  }, [currentPage])
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -104,7 +120,12 @@ function App() {
   }
 
   const handleDragRegionDoubleClick = (event: MouseEvent) => {
-    if ((event.target as HTMLElement).closest('[data-tauri-drag-region]')) {
+    const target = event.target as HTMLElement
+    // Never maximize when the double click landed on an interactive control.
+    if (target.closest('button, input, select, textarea, label, a, [role="button"], [role="option"]')) {
+      return
+    }
+    if (target.closest('[data-tauri-drag-region]')) {
       toggleMaximizeWindow()
     }
   }
@@ -298,50 +319,79 @@ function App() {
         </header>
 
         <main className="app-content">
-          <ErrorBoundary key={currentPage}>
-          {currentPage === 'dashboard' && <DashboardPage connected={connected} />}
-
-          {currentPage === 'topics' && <TopicsPage connected={connected} />}
-
-          {currentPage === 'consumers' && <ConsumersPage connected={connected} />}
-
-          {currentPage === 'producers' && <ProducerPage connected={connected} />}
-
-          {currentPage === 'messages' && (
-            <MessagePage
-              connected={connected}
-              onViewTrace={(msgId) => {
-                setTraceTarget(msgId)
-                setCurrentPage('trace')
-              }}
-            />
+          {visitedPages.includes('dashboard') && (
+            <PageSlot active={currentPage === 'dashboard'}>
+              <DashboardPage connected={connected} active={currentPage === 'dashboard'} />
+            </PageSlot>
           )}
 
-          {currentPage === 'trace' && (
-            <TracePage connected={connected} initialMsgId={traceTarget} />
+          {visitedPages.includes('topics') && (
+            <PageSlot active={currentPage === 'topics'}>
+              <TopicsPage connected={connected} />
+            </PageSlot>
           )}
 
-          {currentPage === 'cluster' && <ClusterPage connected={connected} />}
-
-          {currentPage === 'acl' && <AclPage connected={connected} />}
-
-          {currentPage === 'ops' && (
-            <OpsPage
-              connected={connected}
-              connecting={connecting}
-              currentNameServer={nameServer}
-              onConnect={(profile: ClusterProfile) =>
-                connectTo(
-                  profile.nameServer,
-                  profile.aclEnabled,
-                  profile.accessKey,
-                  profile.secretKey
-                )
-              }
-              onDisconnect={handleDisconnect}
-            />
+          {visitedPages.includes('consumers') && (
+            <PageSlot active={currentPage === 'consumers'}>
+              <ConsumersPage connected={connected} active={currentPage === 'consumers'} />
+            </PageSlot>
           )}
-          </ErrorBoundary>
+
+          {visitedPages.includes('producers') && (
+            <PageSlot active={currentPage === 'producers'}>
+              <ProducerPage connected={connected} />
+            </PageSlot>
+          )}
+
+          {visitedPages.includes('messages') && (
+            <PageSlot active={currentPage === 'messages'}>
+              <MessagePage
+                connected={connected}
+                active={currentPage === 'messages'}
+                onViewTrace={(msgId) => {
+                  setTraceTarget(msgId)
+                  setCurrentPage('trace')
+                }}
+              />
+            </PageSlot>
+          )}
+
+          {visitedPages.includes('trace') && (
+            <PageSlot active={currentPage === 'trace'}>
+              <TracePage connected={connected} initialMsgId={traceTarget} />
+            </PageSlot>
+          )}
+
+          {visitedPages.includes('cluster') && (
+            <PageSlot active={currentPage === 'cluster'}>
+              <ClusterPage connected={connected} />
+            </PageSlot>
+          )}
+
+          {visitedPages.includes('acl') && (
+            <PageSlot active={currentPage === 'acl'}>
+              <AclPage connected={connected} />
+            </PageSlot>
+          )}
+
+          {visitedPages.includes('ops') && (
+            <PageSlot active={currentPage === 'ops'}>
+              <OpsPage
+                connected={connected}
+                connecting={connecting}
+                currentNameServer={nameServer}
+                onConnect={(profile: ClusterProfile) =>
+                  connectTo(
+                    profile.nameServer,
+                    profile.aclEnabled,
+                    profile.accessKey,
+                    profile.secretKey
+                  )
+                }
+                onDisconnect={handleDisconnect}
+              />
+            </PageSlot>
+          )}
         </main>
       </div>
     </div>

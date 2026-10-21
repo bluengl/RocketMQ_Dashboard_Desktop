@@ -690,11 +690,6 @@ textarea:focus {
 .app-shell .text-red-200\/80 { color: color-mix(in srgb, var(--app-danger) 80%, var(--app-text)) !important; }
 .app-shell .bg-black\/20 { background-color: color-mix(in srgb, var(--app-text) 8%, transparent) !important; }
 .app-shell .bg-slate-500\/10 { background-color: color-mix(in srgb, var(--app-muted) 12%, transparent) !important; }
-.app-shell input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert(0.65); }
-
-:root[data-theme="light"] .app-shell input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-  filter: none;
-}
 
 .app-shell .rounded-lg {
   border-radius: 5px !important;
@@ -945,6 +940,502 @@ textarea:focus {
   color: var(--app-danger);
 }
 
+/* Loading overlay: keeps the previous content visible while refreshing. */
+.rmq-loading-wrap {
+  position: relative;
+}
+
+.rmq-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--app-bg) 42%, transparent);
+  color: var(--app-accent);
+  cursor: progress;
+  backdrop-filter: blur(1px);
+}
+
+/* Interactive affordances */
+.app-shell :is(button, [role="button"], a, select, summary, input[type="checkbox"], input[type="radio"]):not(:disabled) {
+  cursor: pointer;
+}
+
+.app-shell :is(button, select, input):disabled {
+  cursor: not-allowed;
+}
+
+.app-content button:not(:disabled):hover {
+  filter: brightness(1.07);
+}
+
+.rmq-text-action {
+  cursor: pointer;
+  transition: opacity 140ms ease, color 140ms ease;
+}
+
+.rmq-text-action:hover {
+  opacity: 0.8;
+}
+
+/* Card header bars share a roomier rhythm. */
+.app-content [class~="bg-slate-900"][class~="py-4"],
+.app-content [class~="border-b"][class~="py-4"] {
+  padding: 18px 24px !important;
+}
+
+/* Custom select: the native popup cannot be themed, so it is rendered in-app. */
+.app-select {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.app-select.is-inline {
+  display: inline-block;
+  width: auto;
+  min-width: 220px;
+}
+
+.app-select.is-compact {
+  display: inline-block;
+  width: auto;
+}
+
+.app-content .app-select-trigger {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  padding: 0 36px 0 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-sunken);
+  color: var(--app-text);
+  font-size: 14px;
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.app-content .app-select-trigger:hover:not(:disabled) {
+  border-color: var(--app-border-strong);
+}
+
+.app-content .app-select-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--app-accent) 42%, var(--app-border));
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent) 10%, transparent);
+}
+
+.app-content .app-select-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.app-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-select-value.is-placeholder {
+  color: var(--app-muted);
+}
+
+.app-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  color: var(--app-muted);
+  transform: translateY(-50%);
+  transition: transform 140ms ease, color 140ms ease;
+}
+
+.app-select-trigger[aria-expanded="true"] .app-select-chevron {
+  color: var(--app-accent);
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.app-content .app-select.is-compact .app-select-trigger {
+  min-height: 34px;
+  padding: 0 30px 0 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.app-select-menu {
+  position: fixed;
+  z-index: 200;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--app-surface-raised) 82%, transparent);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px color-mix(in srgb, var(--app-border-strong) 42%, transparent);
+  backdrop-filter: blur(12px) saturate(1.1);
+  animation: app-select-in 120ms ease;
+}
+
+.app-select-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 2px 6px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--app-surface-sunken) 75%, transparent);
+  color: var(--app-muted);
+}
+
+.app-select-search input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--app-text);
+  font-size: 13px;
+  outline: none;
+}
+
+.app-select-search input:focus {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-select-search input::placeholder {
+  color: var(--app-muted);
+}
+
+.app-select-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.app-select-option:hover,
+.app-select-option.is-active {
+  background: var(--app-accent-soft);
+  color: var(--app-text);
+}
+
+.app-select-option.is-selected {
+  color: var(--app-accent);
+}
+
+.app-select-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-select-empty {
+  padding: 12px;
+  color: var(--app-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+@keyframes app-select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Editable combobox (input + suggestion list). */
+.app-combo {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.app-content .app-combo-input {
+  padding-right: 36px !important;
+}
+
+.app-combo-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.app-combo-toggle:hover:not(:disabled) {
+  background: var(--app-surface-raised);
+  color: var(--app-text);
+}
+
+.app-combo-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Beat the generic `.app-content button` sizing for the overlay chevron. */
+.app-content .app-combo-toggle {
+  width: 26px;
+  height: 26px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+}
+
+.app-combo-chevron,
+.app-ns-combo-chevron {
+  transition: transform 160ms ease;
+}
+
+.app-combo-toggle[aria-expanded="true"] .app-combo-chevron,
+.app-ns-combo-toggle[aria-expanded="true"] .app-ns-combo-chevron {
+  transform: rotate(180deg);
+}
+
+/* The overlay chevron is vertically centred with translateY(-50%); never let a
+   pressed state replace that transform or the icon jumps. */
+.app-content button.app-combo-toggle:active,
+.app-ns-combo-toggle:active {
+  transform: translateY(-50%);
+}
+
+/* Custom date-time picker (native pickers ignore the dark theme). */
+.dtp {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.app-content .dtp-trigger {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  padding: 0 40px 0 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-sunken);
+  color: var(--app-text);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.app-content .dtp-trigger:hover:not(:disabled) {
+  border-color: var(--app-border-strong);
+}
+
+.app-content .dtp-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--app-accent) 42%, var(--app-border));
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent) 10%, transparent);
+}
+
+.app-content .dtp-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dtp-trigger .is-placeholder {
+  color: var(--app-muted);
+}
+
+.dtp-icon {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: var(--app-muted);
+  transform: translateY(-50%);
+}
+
+.dtp-menu {
+  position: fixed;
+  z-index: 200;
+  width: 300px;
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--app-surface-raised) 88%, transparent);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px color-mix(in srgb, var(--app-border-strong) 42%, transparent);
+  backdrop-filter: blur(14px) saturate(1.1);
+  animation: app-select-in 120ms ease;
+}
+
+.dtp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dtp-month {
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dtp-nav {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+}
+
+.dtp-nav:hover {
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+
+.dtp-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 6px;
+  color: var(--app-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.dtp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dtp-grid > span {
+  height: 34px;
+}
+
+.dtp-day {
+  height: 34px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.dtp-day:hover {
+  background: var(--app-accent-soft);
+  color: var(--app-text);
+}
+
+.dtp-day.is-today {
+  box-shadow: inset 0 0 0 1px var(--app-accent-border);
+}
+
+.dtp-day.is-selected {
+  background: var(--app-accent-strong);
+  color: #f7fdff;
+  font-weight: 600;
+}
+
+.dtp-time {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--app-border);
+  color: var(--app-text-secondary);
+  font-size: 13px;
+}
+
+.dtp-time input {
+  width: 56px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-surface-sunken);
+  color: var(--app-text);
+  font-size: 13px;
+  text-align: center;
+}
+
+.dtp-time input:focus {
+  border-color: var(--app-accent-border) !important;
+  box-shadow: none !important;
+}
+
+.dtp-time input::-webkit-outer-spin-button,
+.dtp-time input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.dtp-colon {
+  color: var(--app-muted);
+}
+
+.dtp-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.dtp-action {
+  height: 32px;
+  flex: 1;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.dtp-action:hover {
+  background: var(--app-surface-raised);
+  color: var(--app-text);
+}
+
+.dtp-action.is-primary {
+  border-color: transparent;
+  background: var(--app-accent-strong);
+  color: #f7fdff;
+}
+
 /* Page controls */
 .app-content input:not([type="checkbox"]):not([type="radio"]),
 .app-content select,
@@ -1147,10 +1638,7 @@ textarea:focus {
   content: "";
 }
 
-/* Buttons */
-.app-content button:not(:disabled):active {
-  transform: translateY(1px);
-}
+/* Buttons keep a stable position; hover/active only change colors. */
 
 /* Custom window title bar controls */
 .app-topbar {

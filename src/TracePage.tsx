@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { CheckCircle2, GitBranch, RefreshCw, Search, Send, Inbox, XCircle } from 'lucide-react'
 import type { ConsumerStatus, TraceNode, TraceRecord } from './types'
 import { errorMessage } from './utils/errors'
 import ErrorNotice from './components/ErrorNotice'
+import ComboBox from './components/ComboBox'
 import { useI18n } from './i18n'
 
 interface TracePageProps {
@@ -64,10 +65,37 @@ export default function TracePage({ connected, initialMsgId }: TracePageProps) {
   const [mode, setMode] = useState<TraceMode>('msgid')
   const [queryValue, setQueryValue] = useState('')
   const [traceTopic, setTraceTopic] = useState('')
+  const [topics, setTopics] = useState<string[]>([])
   const [record, setRecord] = useState<TraceRecord | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasQueried, setHasQueried] = useState(false)
+
+  useEffect(() => {
+    if (!connected) {
+      setTopics([])
+      return
+    }
+    let cancelled = false
+    invoke<string[]>('get_topic_list')
+      .then((list) => {
+        if (!cancelled) setTopics(list)
+      })
+      .catch(() => {
+        if (!cancelled) setTopics([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [connected])
+
+  // The trace storage topic is also selectable; retry/DLQ topics are not useful here.
+  const traceTopicOptions = useMemo(() => {
+    const usable = topics.filter(
+      (topic) => !topic.startsWith('%RETRY%') && !topic.startsWith('%DLQ%')
+    )
+    return [...new Set(['RMQ_SYS_TRACE_TOPIC', ...usable])].sort((a, b) => a.localeCompare(b))
+  }, [topics])
 
   const runQuery = async (value = queryValue, queryMode = mode) => {
     const trimmed = value.trim()
@@ -149,15 +177,18 @@ export default function TracePage({ connected, initialMsgId }: TracePageProps) {
               if (e.key === 'Enter') void runQuery()
             }}
             placeholder={mode === 'key' ? t('Message key') : t('Message ID (32 hex chars)')}
-            className="flex-1 min-w-[280px] px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono text-sm"
+            className="min-w-[180px] flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono text-sm"
           />
-          <input
-            type="text"
-            value={traceTopic}
-            onChange={(e) => setTraceTopic(e.target.value)}
-            placeholder={t('Trace topic (default RMQ_SYS_TRACE_TOPIC)')}
-            className="w-72 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 text-sm"
-          />
+          <div className="w-64 max-w-full shrink-0">
+            <ComboBox
+              value={traceTopic}
+              options={traceTopicOptions}
+              onChange={setTraceTopic}
+              placeholder={t('Trace topic (default RMQ_SYS_TRACE_TOPIC)')}
+              ariaLabel={t('Trace topic')}
+              emptyLabel={t('No matching topics')}
+            />
+          </div>
           <button
             onClick={() => void runQuery()}
             disabled={!connected || loading || !queryValue.trim()}
@@ -191,7 +222,9 @@ export default function TracePage({ connected, initialMsgId }: TracePageProps) {
           <div className="col-span-2 bg-slate-800 border border-slate-700 rounded-lg p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="font-medium text-slate-200">{t('Trace Timeline')}</h3>
-              <span className="text-xs text-slate-400">{nodes.length} {t('node(s)')}</span>
+              <span className="text-xs text-slate-400">
+                {nodes.length} {t('node(s)')}
+              </span>
             </div>
             {nodes.length === 0 ? (
               <div className="text-sm text-slate-400">{t('No produce / consume nodes in the trace')}</div>
