@@ -152,7 +152,9 @@ rocketmqMg/
 
 ## 📄 许可证
 
-MIT License
+[Apache License 2.0](LICENSE)。
+
+本项目是 [Apache RocketMQ Dashboard](https://github.com/apache/rocketmq-dashboard) 的对照实现，保留上游项目的版权与许可声明，详见 [NOTICE](NOTICE)。
 
 ---
 

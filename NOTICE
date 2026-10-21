@@ -1,0 +1,15 @@
+RocketMQ Dashboard Desktop
+
+Copyright 2026 RocketMQ Dashboard Desktop contributors
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+This project is a desktop port of Apache RocketMQ Dashboard
+(https://github.com/apache/rocketmq-dashboard), which is licensed under the
+Apache License, Version 2.0. Page layouts, feature sets and protocol usage were
+modelled on that project. The Rust backend implements the RocketMQ Remoting
+protocol directly and does not bundle code from the Java dashboard.
+
+Apache RocketMQ and Apache RocketMQ Dashboard are trademarks of
+The Apache Software Foundation.

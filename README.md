@@ -497,7 +497,9 @@ npm run build:desktop:debug  # debug build (faster, for verification)
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+本项目采用 [Apache License 2.0](LICENSE) 许可协议。
+
+作为 [Apache RocketMQ Dashboard](https://github.com/apache/rocketmq-dashboard) 的对照实现，本项目保留了上游项目的版权与许可声明，详见 [NOTICE](NOTICE)。
 
 ---
 
